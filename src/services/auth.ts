@@ -91,3 +91,10 @@ export async function deleteAllSessions(profileId: string): Promise<void> {
   const { error } = await db.from('sessions').delete().eq('profile_id', profileId);
   if (error) throw dbFailure('session delete-all', error);
 }
+
+/** Deletes the session behind a cookie token, if it is live. No-op for a missing or unknown token. */
+export async function endSessionByToken(token: string | undefined): Promise<void> {
+  if (!token) return;
+  const session = await findSession(token);
+  if (session) await deleteSession(session.sessionId);
+}

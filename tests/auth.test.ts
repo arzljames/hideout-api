@@ -481,6 +481,19 @@ describe('GET /api/auth/steam/callback: Steam profile fallbacks', () => {
     expect(deletes).toEqual([{ table: 'sessions', calls: [['delete', []], ['eq', ['id', SESSION_ID]]] }]);
   });
 
+  it('still signs in (and logs a warning) when ending the previous session fails', async () => {
+    results.rpc = { data: PROFILE_ID, error: null };
+    results.lookup = { data: null, error: { code: 'XX000', message: 'db down' } };
+    const state = newRandomToken();
+    const res = await callback({ state, cookieState: null }).set('Cookie', [
+      `${LOGIN_STATE_COOKIE}=${state}`,
+      `${SESSION_COOKIE}=${newRandomToken()}`,
+    ]);
+    expect(res.headers.location).toBe(`${WEB_ORIGIN}/`);
+    expect(cookieNamed(res, SESSION_COOKIE)).toMatch(new RegExp(`^${SESSION_COOKIE}=[A-Za-z0-9_-]{43};`));
+    expect(logLines.join('')).toContain('could not end previous session');
+  });
+
   it('truncates long names to 64 characters (code points, not UTF-16 units)', async () => {
     const name = '\u{1F600}'.repeat(70);
     steam.summaries = () => Promise.resolve(summariesResponse([{ steamid: STEAM_ID, personaname: name }]));

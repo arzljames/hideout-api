@@ -14,7 +14,7 @@ import {
 } from '../lib/session.js';
 import { MINUTE, navigationLimiter } from '../middleware/rateLimits.js';
 import { authOf, requireAuth } from '../middleware/requireAuth.js';
-import { completeSteamLogin, deleteAllSessions, deleteSession, findSession } from '../services/auth.js';
+import { completeSteamLogin, deleteAllSessions, deleteSession, endSessionByToken } from '../services/auth.js';
 import { documentedRouter } from './documentedRouter.js';
 
 function redirectWithError(res: Response, code: AuthRedirectErrorCode): void {
@@ -42,16 +42,12 @@ const callbackLimiter = navigationLimiter(MINUTE, 10, (_req, res) => {
   redirectWithError(res, 'RATE_LIMITED');
 });
 
-/** Ends the session this browser already had (e.g. signing in as a different account). */
+/** Ends the session this browser already had (e.g. signing in as a different account). Never fails sign-in. */
 async function endPreviousSession(req: Request): Promise<void> {
   const previous = (req.cookies as Record<string, string | undefined>)[SESSION_COOKIE];
-  if (!previous) return;
-  try {
-    const session = await findSession(previous);
-    if (session) await deleteSession(session.sessionId);
-  } catch (err) {
+  await endSessionByToken(previous).catch((err: unknown) => {
     req.log.warn({ err: (err as Error).cause ?? err }, 'could not end previous session');
-  }
+  });
 }
 
 // Public Steam routes are rate-limited per IP; logout routes require a session explicitly,
