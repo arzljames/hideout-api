@@ -46,7 +46,7 @@ Write a plan with these sections, then **stop and wait for my approval** before 
 
 Finish with a summary containing:
 
-- What was built and the final endpoint list
+- What was built and the final endpoint list, each as it appears in Swagger UI at `/api/docs` (tag, summary, responses). Open `/api/docs` and confirm every new endpoint is there before handing off.
 - Migration file names
 - Verification results (commands and outcomes)
 - Review verdicts and anything deferred

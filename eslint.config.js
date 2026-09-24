@@ -22,6 +22,27 @@ export default tseslint.config(
     },
   },
   {
+    // Routes must go through documentedRouter so every endpoint is in /api/docs.
+    files: ['src/routes/**/*.ts'],
+    // index.ts only mounts routers; it defines no routes.
+    ignores: ['src/routes/documentedRouter.ts', 'src/routes/index.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: 'express',
+              importNames: ['Router'],
+              message: 'Use documentedRouter() so the route is documented in /api/docs.',
+              allowTypeImports: true,
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // supertest types res.body as any.
     files: ['tests/**/*.ts'],
     rules: {

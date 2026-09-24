@@ -84,3 +84,14 @@ export class RateLimitedError extends AppError {
     super(429, 'RATE_LIMITED', message);
   }
 }
+
+/**
+ * An unexpected failure (e.g. a database error). The response is always the generic
+ * 500 message; `cause` is logged by errorHandler and never sent to the client.
+ */
+export class InternalError extends AppError {
+  constructor(cause?: unknown) {
+    super(500, 'INTERNAL', 'Something went wrong.');
+    this.cause = cause;
+  }
+}

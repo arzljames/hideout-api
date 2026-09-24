@@ -1,15 +1,19 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
-import { SESSION_COOKIE, signSession } from '../src/lib/session.js';
-import { errorHandler } from '../src/middleware/errorHandler.js';
-import { requireAuth } from '../src/middleware/requireAuth.js';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InternalError } from '../src/errors.js';
 
-const PROFILE_ID = '5b0e7c1e-7f4a-4d2e-9a5b-3c1d2e4f6a7b';
-const SECRET = process.env.SESSION_SECRET ?? '';
-const CLAIMS = { subject: PROFILE_ID, issuer: 'hideout-api', audience: 'hideout-session' };
+vi.mock('../src/services/auth.js', () => ({ findSession: vi.fn() }));
+
+const { findSession } = await import('../src/services/auth.js');
+const { SESSION_COOKIE } = await import('../src/lib/session.js');
+const { errorHandler } = await import('../src/middleware/errorHandler.js');
+const { requireAuth } = await import('../src/middleware/requireAuth.js');
+
+const findSessionMock = vi.mocked(findSession);
+const SESSION = { profileId: '5b0e7c1e-7f4a-4d2e-9a5b-3c1d2e4f6a7b', sessionId: '0d7f1c2e-3b4a-4c5d-8e9f-a0b1c2d3e4f5' };
+const TOKEN = 'a'.repeat(43);
 
 const app = express()
   .use(cookieParser())
@@ -23,35 +27,36 @@ function withCookie(token: string) {
 }
 
 describe('requireAuth', () => {
-  it('accepts a valid session cookie', async () => {
-    const res = await withCookie(signSession(PROFILE_ID));
+  beforeEach(() => {
+    findSessionMock.mockReset();
+  });
+
+  it('accepts a cookie with a live session', async () => {
+    findSessionMock.mockResolvedValue(SESSION);
+    const res = await withCookie(TOKEN);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ profileId: PROFILE_ID });
+    expect(res.body).toEqual(SESSION);
+    expect(findSessionMock).toHaveBeenCalledWith(TOKEN);
   });
 
   it('rejects a missing cookie', async () => {
+    findSessionMock.mockResolvedValue(null);
     const res = await request(app).get('/me');
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('rejects a token signed with another secret', async () => {
-    const res = await withCookie(jwt.sign({}, 'x'.repeat(40), { ...CLAIMS, expiresIn: 60 }));
+  it('rejects an unknown or expired session', async () => {
+    findSessionMock.mockResolvedValue(null);
+    const res = await withCookie(TOKEN);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('UNAUTHENTICATED');
   });
 
-  it('rejects an expired token', async () => {
-    const res = await withCookie(jwt.sign({}, SECRET, { ...CLAIMS, expiresIn: -10 }));
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects alg "none"', async () => {
-    const res = await withCookie(jwt.sign({}, '', { ...CLAIMS, algorithm: 'none' }));
-    expect(res.status).toBe(401);
-  });
-
-  it('rejects a Realtime-style token signed with the session secret (wrong audience)', async () => {
-    const res = await withCookie(jwt.sign({ sub: PROFILE_ID, aud: 'authenticated' }, SECRET));
-    expect(res.status).toBe(401);
+  it('turns a database failure into a generic 500', async () => {
+    findSessionMock.mockRejectedValue(new InternalError(new Error('connection refused to db.internal')));
+    const res = await withCookie(TOKEN);
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Something went wrong.' } });
   });
 });

@@ -42,6 +42,10 @@ describe('parseEnv', () => {
     expect(() => parseEnv({ ...valid, SESSION_SECRET: valid.SUPABASE_JWT_SECRET })).toThrow(/must differ/);
   });
 
+  it('requires API_URL to be a bare origin (it builds Steam return_to)', () => {
+    expect(() => parseEnv({ ...valid, API_URL: 'http://localhost:5173/' })).toThrow(/API_URL/);
+  });
+
   it('requires WEB_ORIGIN to be a bare origin', () => {
     expect(() => parseEnv({ ...valid, WEB_ORIGIN: 'http://localhost:5173/' })).toThrow(/WEB_ORIGIN/);
   });

@@ -69,7 +69,7 @@ describe('rate limits', () => {
 describe('contract route', () => {
   it('returns 404 NOT_FOUND (not 500) when the contract has not been generated', async () => {
     const empty = await mkdtemp(join(tmpdir(), 'hideout-contract-'));
-    const app = express().use('/contract', createContractRouter(empty)).use(errorHandler);
+    const app = express().use('/contract', createContractRouter(empty).router).use(errorHandler);
     const res = await request(app).get('/contract/openapi.json');
     expect(res.status).toBe(404);
     expect(res.body.error).toEqual({ code: 'NOT_FOUND', message: 'Contract not generated.' });
