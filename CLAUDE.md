@@ -53,7 +53,7 @@ hideout-api/
 │   └── events.schema.json generated realtime event contract (committed, never edit)
 ├── supabase/
 │   ├── migrations/       the only way the schema and Realtime policies change
-│   ├── tests/            pgTAP tests
+│   ├── tests/            pgTAP tests (run by `npm run test:db`)
 │   └── seed.sql
 └── .claude/
 ```
@@ -70,13 +70,27 @@ npm run lint
 npm run test
 npm run build             # tsc → dist/
 npm run contracts         # regenerate contract/openapi.json and contract/events.schema.json
-npx supabase start        # local Postgres + Realtime (Docker)
-npx supabase db reset     # re-apply migrations + seed
-npx supabase test db      # pgTAP tests
-npx supabase migration new <name>
+npx supabase migration new <name>   # create a migration file (offline)
+npm run db:status         # migrations applied on the dev project vs local
+npm run db:push           # apply pending migrations to the dev project
+npm run db:reset          # DESTRUCTIVE, humans only: re-create the schema from migrations + seed (type the project ref to confirm)
+npm run test:db           # pgTAP tests against the dev project (each file rolled back)
 ```
 
-Done means: `npm run typecheck && npm run lint && npm run test` pass. If contracts changed, `npm run contracts` was run and the diff committed. If migrations changed, `npx supabase db reset && npx supabase test db` pass.
+### Database: one hosted Supabase project, no Docker
+
+This is a side project with **one hosted Supabase project used as the dev database**. There is no local Supabase stack and no Docker. There is no production project yet; create a separate one before real users arrive (see "Before production" below).
+
+- `npm run db:*` and `npm run test:db` wrap the Supabase CLI and `scripts/db.ts`, reading `SUPABASE_DB_URL` (session pooler connection string; contains the DB password), `SUPABASE_DEV_PROJECT_REF`, and optionally `SUPABASE_DB_CA_CERT` from `.env`. Every command refuses a URL for any project other than `SUPABASE_DEV_PROJECT_REF`. The URL is never typed into a shell, but it is passed to the Supabase CLI as `--db-url`, so it is visible in that process's arguments while it runs.
+- `npm run db:reset` only runs in an interactive terminal and asks you to type the project ref, so agents can't run it. It re-applies all migrations and the seed to a clean schema; confirm on the first run what it keeps (e.g. `auth` users).
+- `npm run test:db` runs every `supabase/tests/**/*.sql` file in its own transaction that is always rolled back (including `create extension pgtap`), with a 30s statement timeout. A file may open with `begin;` and close with `rollback;` (Supabase docs style); any other transaction control (`commit`, `end`, `savepoint`, ...) fails the file without running it, because it would commit to the shared database. Each file needs `select plan(n)` and `select * from finish()`; the runner also fails a file whose assertion count doesn't match its plan. Without `SUPABASE_DB_CA_CERT`, TLS is encrypted but the server certificate isn't verified.
+- `npm run test` (Vitest) never touches the database: it mocks at the supabase-js / `fetch` boundary, so it runs offline. Database behavior is tested with pgTAP.
+- Supabase Auth sign-ups must be off in the dashboard (Authentication → Sign In / Providers). `supabase/config.toml` only affects a local stack.
+- `db:push` changes the shared dev database; agents ask before running it. When a clean slate is needed, agents ask you to run `db:reset`.
+
+**Before production:** create a second Supabase project with a different database password, apply the same migrations to it, turn on backups, and put its keys only in the deployment's env. Never put its connection string in a dev `.env`; the project-ref guard exists to catch that mistake.
+
+Done means: `npm run typecheck && npm run lint && npm run test` pass. If contracts changed, `npm run contracts` was run and the diff committed. If migrations changed, `npm run db:push && npm run test:db` pass against the dev project.
 
 ## The contract with hideout-web
 
@@ -172,7 +186,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 
 - `GET /api/health` (liveness), `GET /api/ready` (DB, Realtime, and LiveKit reachable).
 - Graceful shutdown with a 10s drain. `trust proxy` set for one proxy hop.
-- New env vars go in `.env.example` and `src/config/env.ts` in the same change.
+- New env vars go in `.env.example` and `src/config/env.ts` in the same change. Tooling-only vars the app never reads (`SUPABASE_DB_URL`, `SUPABASE_DEV_PROJECT_REF`, `SUPABASE_DB_CA_CERT`) go in `.env.example` and are validated by the script that uses them.
 
 ## Conventions
 

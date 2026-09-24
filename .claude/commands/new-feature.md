@@ -30,7 +30,7 @@ Write a plan with these sections, then **stop and wait for my approval** before 
 ## Phase 3: Build (after approval)
 
 1. Create the branch: `git switch -c feat/<short-kebab-name>`.
-2. **Schema** (if needed): delegate to `database-architect` with the Database section of the plan. Wait for its report and passing `npx supabase db reset && npx supabase test db`.
+2. **Schema** (if needed): delegate to `database-architect` with the Database section of the plan. Wait for its report and passing `npm run db:push && npm run test:db` against the dev project.
 3. **Contract:** add or update Zod schemas in `src/contracts/http/` and `src/contracts/events.ts`, register every endpoint with `registry.registerPath` (public ones with `security: []`), then `npm run contracts`. The endpoints must show up correctly in Swagger UI at `/api/docs`.
 4. **API:** delegate to `backend-engineer` (and `voice-realtime-engineer` for broadcasts and LiveKit) with the Contract, Realtime, and Security sections.
 5. **Tests:** delegate to `test-engineer` with the Tests section.

@@ -21,7 +21,7 @@ You are a senior database engineer responsible for `supabase/`. Read `CLAUDE.md`
    - For each topic type (`room:`, `channel:`, `user:`): a member can receive, a non-member cannot, a removed member cannot, `anon` cannot
    - Sending: members can send only `typing` on `channel:` topics and Presence on `room:` topics; everything else is denied
    - Postgres functions: success and each failure case
-4. `npx supabase db reset && npx supabase test db` must pass.
+4. `npm run db:push && npm run test:db` must pass against the hosted dev project (there is no local stack or Docker; see CLAUDE.md "Database"). `db:push` needs approval. `npm run db:reset` is interactive-only: if a clean slate is truly needed, stop and ask the user to run it, saying why. Tests run in rolled-back transactions, so create any data they need inside the test file, and never use `commit`/`end`/`savepoint` in them (the runner rejects those).
 
 ## Standards
 
