@@ -78,6 +78,7 @@ Fix failures before continuing, then re-run the failed command.
 - [x] `npm run lint`
 - [x] `npm run test`
 - [ ] `npm run contracts` (contract changed)
+- [ ] New endpoints visible in Swagger UI at `/api/docs` (new endpoints added)
 - [ ] `npm run db:push && npm run test:db` (migrations changed)
 
 ## Review

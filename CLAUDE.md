@@ -104,7 +104,7 @@ Interactive REST docs: **Swagger UI at `GET /api/docs`** (locally http://localho
 hideout-web generates its TypeScript types from both. Rules:
 
 - `src/contracts/` is the source of truth; never edit the generated files.
-- Every REST endpoint is registered with `registry.registerPath` in `src/contracts/http/` (method, path, tags, summary, request, responses, error codes) so it appears in `openapi.json` and `/api/docs`. Public endpoints set `security: []`; everything else inherits the `session` cookie scheme.
+- Every REST endpoint is registered with `registry.registerPath` in `src/contracts/http/` (method, path, tags, summary, request, responses, error codes) so it appears in `openapi.json` and `/api/docs`. Public endpoints set `security: []`; everything else inherits the `session` cookie scheme. **Every new feature adds its endpoints to Swagger.** This is enforced: routes are created with `documentedRouter()` (`src/routes/documentedRouter.ts`; plain Express `Router` is lint-banned in `src/routes`), which throws when a route isn't registered, so the app and every test fail until it is. Non-API routes (Swagger UI's own assets) use `.undocumented(reason, ...)`.
 - **No breaking changes** to existing endpoints or events (removing/renaming fields or events, changing types, new required fields). Add new fields or events, mark the old ones deprecated, remove only after hideout-web has shipped without them.
 - Every PR that changes `contract/` must say so in its description, with a summary for the frontend.
 
@@ -147,7 +147,8 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 
 ## Domain model
 
-- `profiles` (id uuid, steam_id unique, display_name, avatar_url, created_at)
+- `profiles` (id uuid, steam_id unique, display_name, avatar_url, created_at, updated_at)
+- `sessions` (id, profile_id, token_hash, created_at, expires_at): server-side login sessions; `token_hash` = HMAC-SHA256(SESSION_SECRET, cookie token), the raw token is never stored
 - `rooms` (id, name, icon, owner_id, created_at, deleted_at)
 - `room_members` (room_id, user_id, role: owner | admin | member, joined_at) PK(room_id, user_id)
 - `channels` (id, room_id, type: text | voice, name, position)
@@ -162,7 +163,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 4. Non-members get 404, never 403, so room existence doesn't leak.
 5. Secrets (service role key, database URL, JWT signing secret, Steam API key, LiveKit secret, session secret) never appear in responses, broadcasts, or logs.
 6. Every REST input is validated with Zod from `src/contracts`; every broadcast payload is built from the event schemas.
-7. Schema and policy changes only through new migrations, with tests in the same change. Never edit an applied migration.
+7. Schema and policy changes only through new migrations, with tests in the same change. Never edit an applied migration. Every new function in `public` must `revoke execute ... from public, anon, authenticated` itself (Postgres grants PUBLIC execute by default, and schema-level defaults can't remove it). `supabase/tests/001_lockdown_guard.test.sql` fails `test:db` if any `public` table lacks RLS or any table/function is reachable by `anon`/`authenticated`. Functions browsers must call (the Realtime topic helper) go in a separate schema.
 8. Soft delete rooms and messages.
 9. Revoking access (member removal, room deletion) updates the database, broadcasts the event, and removes the user from LiveKit, together.
 
@@ -179,7 +180,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - CSRF: state-changing routes require `Content-Type: application/json` and an `Origin` equal to `WEB_ORIGIN`.
 - Invite tokens: 32 random bytes, base64url; store SHA-256 only; redeem in a Postgres function that locks the invite row.
 - LiveKit tokens: identity = profile id, room = `voice_<channelId>`, TTL 10 min. Webhooks verified with `WebhookReceiver` on the raw body.
-- Rate limits: auth 10/min/IP, realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user.
+- Rate limits: auth 10/min/IP (separately for `/api/auth/steam` and the callback; both redirect with `?auth_error=RATE_LIMITED` instead of a JSON 429, since they are browser navigations), realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user.
 - Pino redaction covers cookies, authorization headers, tokens, and keys.
 
 ## Operational

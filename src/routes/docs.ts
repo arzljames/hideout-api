@@ -1,6 +1,6 @@
-import { Router } from 'express';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
+import { documentedRouter } from './documentedRouter.js';
 
 /*
  * Swagger UI for contract/openapi.json, served same-origin from swagger-ui-dist so it
@@ -40,20 +40,19 @@ const init = `window.ui = SwaggerUIBundle({
 });
 `;
 
-export const docsRouter = Router();
-
-docsRouter.get('/', (_req, res) => {
-  res.set('Cache-Control', 'no-cache').type('html').send(page);
-});
-
-docsRouter.get('/init.js', (_req, res) => {
-  res.set('Cache-Control', 'no-cache').type('js').send(init);
-});
-
-for (const file of ASSETS) {
-  docsRouter.get(`/assets/${file}`, (_req, res, next) => {
-    res.sendFile(file, { root: swaggerDir, maxAge: '1d' }, (err) => {
-      if (err) next(err);
+export const docsRouter = documentedRouter('/api/docs')
+  .get('/', (_req, res) => {
+    res.set('Cache-Control', 'no-cache').type('html').send(page);
+  })
+  .undocumented('Swagger UI boot script and static assets, not API endpoints', (router) => {
+    router.get('/init.js', (_req, res) => {
+      res.set('Cache-Control', 'no-cache').type('js').send(init);
     });
+    for (const file of ASSETS) {
+      router.get(`/assets/${file}`, (_req, res, next) => {
+        res.sendFile(file, { root: swaggerDir, maxAge: '1d' }, (err) => {
+          if (err) next(err);
+        });
+      });
+    }
   });
-}

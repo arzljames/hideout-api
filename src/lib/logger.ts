@@ -40,6 +40,8 @@ export const logger = pino({
       'req.headers.authorization',
       'req.headers["idempotency-key"]',
       'res.headers["set-cookie"]',
+      // The Steam login redirect carries the login state (same value as the state cookie).
+      'res.headers.location',
       'token',
       'secret',
       'apiKey',

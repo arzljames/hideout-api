@@ -10,7 +10,8 @@ export const envSchema = z
     // Number of proxy hops in front of the API (sets req.ip for rate limits). 0 = none.
     TRUST_PROXY: z.coerce.number().int().min(0).optional(),
 
-    API_URL: z.url(),
+    // Used to build Steam's return_to/realm, so no path or trailing slash.
+    API_URL: z.url().refine((v) => new URL(v).origin === v, 'must be a bare origin, e.g. https://api.hideout.gg'),
     // Compared exactly against the Origin header, so no path or trailing slash.
     WEB_ORIGIN: z.url().refine((v) => new URL(v).origin === v, 'must be a bare origin, e.g. https://app.hideout.gg'),
 

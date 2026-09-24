@@ -28,6 +28,9 @@ function toAppError(err: unknown): AppError | undefined {
 export const errorHandler: ErrorRequestHandler = (err: unknown, req, res, _next) => {
   const appError = toAppError(err);
   if (appError) {
+    if (appError.status >= 500) {
+      ((req.log as typeof logger | undefined) ?? logger).error({ err: appError.cause ?? appError }, 'internal error');
+    }
     res.status(appError.status).json({
       error: {
         code: appError.code,

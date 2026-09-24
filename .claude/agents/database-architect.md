@@ -26,7 +26,8 @@ You are a senior database engineer responsible for `supabase/`. Read `CLAUDE.md`
 ## Standards
 
 - **Table lockdown:** RLS enabled on every application table with no policies for `anon` or `authenticated`; revoke default privileges from those roles.
-- **Realtime policies:** `select` (receive) and `insert` (send) policies on `realtime.messages` for `authenticated`, keyed on `realtime.topic()` and the message extension/event. Put topic parsing and membership logic in one `security definer` helper (e.g. `public.can_access_topic(topic text)`) that uses `auth.uid()`, sets `search_path = ''`, uses fully qualified names, and returns only a boolean. Grant `execute` on it to `authenticated` and nothing else.
+- **Realtime policies:** `select` (receive) and `insert` (send) policies on `realtime.messages` for `authenticated`, keyed on `realtime.topic()` and the message extension/event. Put topic parsing and membership logic in one `security definer` helper (e.g. `private.can_access_topic(topic text)`) that uses `auth.uid()`, sets `search_path = ''`, uses fully qualified names, and returns only a boolean. Grant `execute` on it to `authenticated` and nothing else.
+- Every function in `public` revokes execute from `public, anon, authenticated` in its own migration; `supabase/tests/001_lockdown_guard.test.sql` enforces it. Browser-callable helpers (e.g. `can_access_topic`) live in a separate schema (e.g. `private`) with execute granted to `authenticated` only.
 - Transactional functions (invite redemption, room creation with default channels, member removal, ownership transfer) lock the rows they check, are `security definer` with `search_path = ''`, and grant `execute` only to `service_role`.
 - Application tables are not added to the `supabase_realtime` publication.
 - Foreign keys with explicit `on delete`; `timestamptz default now()`.
