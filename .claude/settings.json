@@ -7,10 +7,7 @@
       "Bash(npm run test:*)",
       "Bash(npm run build:*)",
       "Bash(npm run contracts:*)",
-      "Bash(npx supabase start)",
-      "Bash(npx supabase status)",
-      "Bash(npx supabase db reset)",
-      "Bash(npx supabase test db)",
+      "Bash(npm run db:status:*)",
       "Bash(npx supabase migration new:*)",
       "Bash(git status)",
       "Bash(git diff:*)",
@@ -21,7 +18,9 @@
     "ask": [
       "Bash(npm install:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npm run db:push:*)",
+      "Bash(npm run db:reset:*)"
     ],
     "deny": [
       "Read(**/.env)",

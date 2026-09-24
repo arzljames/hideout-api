@@ -21,8 +21,8 @@ You are the test engineer for hideout-api. Aim for confidence in behavior that u
 
 ## Tools
 
-- Vitest + supertest against `app.ts` with local Supabase (`npx supabase start`). Mock Steam and LiveKit only at the HTTP boundary.
-- pgTAP in `supabase/tests/`, impersonating roles via `set local role authenticated` and `request.jwt.claims`.
+- Vitest + supertest against `app.ts`, offline: mock the database at the supabase-js / `fetch` boundary (see `tests/broadcast.test.ts`), and Steam and LiveKit at the HTTP boundary. `npm run test` must never touch the shared dev database.
+- Database behavior (lockdown, Realtime policies, Postgres functions) is tested with pgTAP in `supabase/tests/` via `npm run test:db`, against the hosted dev project, one rolled-back transaction per file. Impersonate roles with `set local role authenticated` and `request.jwt.claims`. Every file needs `select plan(n)` and `select * from finish()`, and no transaction control besides an optional leading `begin;` and trailing `rollback;`. Don't change `search_path` (pgTAP lives in `extensions`).
 
 ## Standards
 

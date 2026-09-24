@@ -30,7 +30,7 @@ Flag anything that should not ship: `.env*` files, secrets, debug logs, stray `c
 
 1. `npm run typecheck && npm run lint && npm run test`
 2. If **Contract** changed: `npm run contracts`, then confirm `git status` shows no further diff in `contract/` (otherwise the generated files are stale and must be committed).
-3. If **Database** changed: `npx supabase db reset && npx supabase test db`.
+3. If **Database** changed: `npm run db:status` (every local migration applied?), then `npm run db:push && npm run test:db` against the dev project.
 
 Fix failures before continuing, then re-run the failed command.
 
@@ -78,7 +78,7 @@ Fix failures before continuing, then re-run the failed command.
 - [x] `npm run lint`
 - [x] `npm run test`
 - [ ] `npm run contracts` (contract changed)
-- [ ] `npx supabase db reset && npx supabase test db` (migrations changed)
+- [ ] `npm run db:push && npm run test:db` (migrations changed)
 
 ## Review
 <code-reviewer and security-reviewer verdicts; anything deferred>
