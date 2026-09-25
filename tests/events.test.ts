@@ -8,6 +8,7 @@ describe('realtime event contract', () => {
     expect(names('room')).toEqual([
       'channel:created',
       'channel:deleted',
+      'channel:reordered',
       'channel:updated',
       'member:joined',
       'member:left',

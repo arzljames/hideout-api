@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -330,7 +330,7 @@
         "type": "string",
         "minLength": 1,
         "maxLength": 48,
-        "description": "Room name: 1–48 UTF-16 code units after trimming surrounding whitespace. Must contain at least one letter, number, symbol, or punctuation mark, and no invisible or bidi control characters (control characters, U+200B, U+200C, U+200E, U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, U+FEFF; U+200D zero-width joiner is allowed for emoji).",
+        "description": "Room name: 1–48 UTF-16 code units after trimming surrounding whitespace. Normalized to Unicode NFC before the length check (composed and decomposed forms are the same name). Must contain at least one visible letter, number, symbol, or punctuation mark. Outside RGI emoji, format characters (Unicode Cf, e.g. zero-width and bidi control characters, soft hyphen, U+FEFF, tag characters), control characters (Cc), line and paragraph separators (Zl, Zp), and the blank-looking U+115F, U+1160, U+3164, U+FFA0, and U+2800 are rejected; U+200D zero-width joiner is allowed for emoji.",
         "example": "Friday Night Raids"
       },
       "RoomIconInput": {
@@ -469,6 +469,87 @@
           "defaultChannelId",
           "channels",
           "members"
+        ]
+      },
+      "ChannelType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "voice"
+        ]
+      },
+      "ChannelName": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32,
+        "description": "Channel name: 1–32 UTF-16 code units after trimming surrounding whitespace. Unique among the room’s live channels of the same type, ignoring case. Normalized to Unicode NFC before the length check (composed and decomposed forms are the same name). Must contain at least one visible letter, number, symbol, or punctuation mark. Outside RGI emoji, format characters (Unicode Cf, e.g. zero-width and bidi control characters, soft hyphen, U+FEFF, tag characters), control characters (Cc), line and paragraph separators (Zl, Zp), and the blank-looking U+115F, U+1160, U+3164, U+FFA0, and U+2800 are rejected; U+200D zero-width joiner is allowed for emoji.",
+        "example": "general"
+      },
+      "CreateChannelBody": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ChannelType"
+          },
+          "name": {
+            "$ref": "#/components/schemas/ChannelName"
+          }
+        },
+        "required": [
+          "type",
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "RenameChannelBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "$ref": "#/components/schemas/ChannelName"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      },
+      "ReorderChannelsBody": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ChannelType"
+          },
+          "channelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Every live channel of `type` in the room, each exactly once, in the new order (first = top).",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "type",
+          "channelIds"
+        ],
+        "additionalProperties": false
+      },
+      "ChannelList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Channel"
+            },
+            "description": "Live channels of one type, by position."
+          }
+        },
+        "required": [
+          "data"
         ]
       }
     },
@@ -1224,6 +1305,433 @@
           },
           "404": {
             "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/channels": {
+      "post": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Create a channel",
+        "description": "Owner or admin only. The new channel is appended to the end of its type. A room holds at most 50 live channels. Broadcasts `channel:created` on `room:<roomId>`. Non-members get 404. Not idempotent: disable the create button while the request is pending. Channel writes are rate limited to 60/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateChannelBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_NAME_TAKEN`: a live channel of this type already has this name (ignoring case). `CHANNEL_LIMIT_REACHED`: the room already has the maximum number of channels.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid type or name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}": {
+      "patch": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Rename a channel",
+        "description": "Owner or admin only. Broadcasts `channel:updated` on `room:<roomId>`. Non-members get 404. Channel writes are rate limited to 60/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel id."
+            },
+            "required": true,
+            "description": "Channel id.",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameChannelBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The renamed channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Channel"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found or deleted, its room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_NAME_TAKEN`: another live channel of this type already has this name (ignoring case).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid name.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Delete a channel",
+        "description": "Owner or admin only. Soft-deletes the channel; its messages are kept but no longer reachable. Deleting a voice channel disconnects everyone in it. The last text channel of a room can’t be deleted. Broadcasts `channel:deleted` on `room:<roomId>`. Non-members get 404. Channel writes are rate limited to 60/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel id."
+            },
+            "required": true,
+            "description": "Channel id.",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found or deleted, its room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`LAST_TEXT_CHANNEL`: this is the room’s only text channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/channels/order": {
+      "put": {
+        "tags": [
+          "channels"
+        ],
+        "summary": "Reorder a room’s channels of one type",
+        "description": "Owner or admin only. `channelIds` must list every live channel of `type` in the room exactly once; if the list is stale (a channel was created or deleted meanwhile) the response is 409 `CHANNEL_ORDER_STALE`: reload the room and try again. Broadcasts `channel:reordered` on `room:<roomId>`. Non-members get 404. Channel writes are rate limited to 60/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderChannelsBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The channels of that type in their new order.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChannelList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_ORDER_STALE`: the list doesn’t match the room’s live channels of that type. Reload and retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid type, or channelIds empty, too long, malformed, or repeated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
             "content": {
               "application/json": {
                 "schema": {
