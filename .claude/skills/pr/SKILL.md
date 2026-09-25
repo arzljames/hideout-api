@@ -24,7 +24,7 @@ Run `git diff origin/main...HEAD --stat` plus the uncommitted `git diff` / `git 
 - **Env:** new env vars (must be in both `.env.example` and `src/config/env.ts`)
 - **Dependencies:** changes to `package.json` / lockfile (each new dependency needs a stated reason)
 
-If **Contract** changed or anything the frontend sees changed, `docs/hideout-web-handoff.md` must be updated in this PR (with a Changelog line); if it isn't, update it before committing.
+If **Contract** changed or anything the frontend sees changed, confirm the hideout-web handoff doc (Claude Docs connector, see `/new-feature` Phase 5) was updated; it is never part of the PR.
 
 Flag anything that should not ship: `.env*` files, secrets, debug logs, stray `console.log`, edits to already-applied migrations, hand edits to `contract/*.json`.
 
@@ -81,7 +81,6 @@ Fix failures before continuing, then re-run the failed command.
 - [x] `npm run test`
 - [ ] `npm run contracts` (contract changed)
 - [ ] New endpoints visible in Swagger UI at `/api/docs` (new endpoints added)
-- [ ] `docs/hideout-web-handoff.md` updated, Changelog line added (contract or frontend-visible behavior changed)
 - [ ] `npm run db:push && npm run test:db` (migrations changed)
 
 ## Review
