@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:db": "tsx --env-file-if-exists=.env scripts/db.ts test",
     "contracts": "tsx scripts/generate-contracts.ts",
+    "jwt:keygen": "tsx scripts/generate-jwt-key.ts",
     "db:status": "tsx --env-file-if-exists=.env scripts/db.ts status",
     "db:push": "tsx --env-file-if-exists=.env scripts/db.ts push",
     "db:reset": "tsx --env-file-if-exists=.env scripts/db.ts reset"

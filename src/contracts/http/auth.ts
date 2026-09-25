@@ -88,7 +88,11 @@ registry.registerPath({
   path: '/api/auth/logout-all',
   tags: ['auth'],
   summary: 'Sign out of every device',
-  description: 'Deletes all of the current user’s sessions and clears the cookie. Same request rules as logout.',
+  description:
+    'Deletes all of the current user’s sessions and clears the cookie. Same request rules as logout. ' +
+    'Afterwards the API broadcasts `session:expired` (empty payload) on the user’s `user:<profileId>` ' +
+    'Realtime topic so other open tabs and devices can sign out; delivery is best-effort and never ' +
+    'fails this request. Single-device logout does not broadcast.',
   responses: {
     204: { description: 'Signed out everywhere.' },
     ...authedErrors,
@@ -118,6 +122,36 @@ registry.registerPath({
     'Sent with `Cache-Control: no-store`.',
   responses: {
     200: { description: 'The signed-in user.', content: { 'application/json': { schema: Me } } },
+    ...authedErrors,
+    500: errorResponse('Unexpected server error.'),
+  },
+});
+
+/** A short-lived Supabase Realtime JWT. A plain object so fields can be added without breaking clients. */
+export const RealtimeToken = registry.register(
+  'RealtimeToken',
+  z.object({
+    token: z.string().min(1).openapi({ description: 'Supabase JWT for `supabase.realtime.setAuth(token)`.' }),
+    expiresAt: z.iso.datetime({ offset: true }).openapi({
+      example: '2026-09-25T10:15:00.000Z',
+      description: 'When the token expires. Refresh about a minute before.',
+    }),
+  }),
+);
+export type RealtimeToken = z.infer<typeof RealtimeToken>;
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/auth/realtime-token',
+  tags: ['auth'],
+  summary: 'Realtime token',
+  description:
+    'A short-lived (15 minute) Supabase JWT for joining private Realtime channels. Call ' +
+    '`supabase.realtime.setAuth(token)` and fetch a new one about a minute before `expiresAt`. ' +
+    'The token carries no room claims: which topics can be joined is decided by current room membership. ' +
+    'Sent with `Cache-Control: no-store`. Rate limited to 30 requests per hour per user.',
+  responses: {
+    200: { description: 'A fresh Realtime token.', content: { 'application/json': { schema: RealtimeToken } } },
     ...authedErrors,
     500: errorResponse('Unexpected server error.'),
   },
