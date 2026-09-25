@@ -7,7 +7,9 @@ import { vi } from 'vitest';
  *   vi.mock('../src/db/client.js', async () => ({ db: (await import('./helpers/fakeDb.js')).fakeDb }));
  *
  * Every `db.from(table)` records its chained calls; awaiting the chain resolves to
- * `results.lookup` for selects and `results.delete` for deletes.
+ * `results.lookup` for selects and `results.delete` for deletes. A select on a table
+ * listed in `results.selectByTable` resolves to that entry instead (for routes that
+ * query more than one table, e.g. the session lookup followed by the profile lookup).
  */
 
 export interface RecordedQuery {
@@ -17,13 +19,19 @@ export interface RecordedQuery {
 
 interface DbResult {
   data?: unknown;
-  error: { code?: string; message?: string; details?: string } | null;
+  error: { code?: string; message?: string; details?: string; hint?: string } | null;
 }
 
 export const queries: RecordedQuery[] = [];
 
-export const results: { lookup: DbResult; delete: DbResult; rpc: DbResult } = {
+export const results: {
+  lookup: DbResult;
+  delete: DbResult;
+  rpc: DbResult;
+  selectByTable: Partial<Record<string, DbResult>>;
+} = {
   lookup: { data: null, error: null },
+  selectByTable: {},
   delete: { error: null },
   rpc: { data: null, error: null },
 };
@@ -42,7 +50,12 @@ function builder(table: string): Record<string, unknown> {
   }
   // supabase-js builders are thenables; mimic that so `await db.from(...)...` works.
   chain.then = (onFulfilled: (value: DbResult) => unknown, onRejected: (reason: unknown) => unknown) => {
-    const result = record.calls[0]?.[0] === 'delete' ? results.delete : results.lookup;
+    const result =
+      record.calls[0]?.[0] === 'delete'
+        ? results.delete
+        : record.calls[0]?.[0] === 'select'
+          ? (results.selectByTable[table] ?? results.lookup)
+          : results.lookup;
     return Promise.resolve(result).then(onFulfilled, onRejected);
   };
   return chain;
@@ -58,6 +71,7 @@ export function resetFakeDb(): void {
   results.lookup = { data: null, error: null };
   results.delete = { error: null };
   results.rpc = { data: null, error: null };
+  results.selectByTable = {};
   fakeDb.from.mockClear();
   fakeDb.rpc.mockClear();
 }

@@ -109,6 +109,39 @@
           "RATE_LIMITED"
         ],
         "description": "Value of the `auth_error` query param when the Steam callback redirects back to WEB_ORIGIN. STEAM_LOGIN_FAILED: Steam rejected or we could not verify the sign-in. LOGIN_STATE_MISMATCH: the sign-in was not started from this browser (or took over 10 minutes). STEAM_UNAVAILABLE: Steam could not be reached. LOGIN_FAILED: our server failed to create the session. RATE_LIMITED: too many sign-in attempts from this network; try again in a minute."
+      },
+      "Me": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "steamId": {
+            "type": "string",
+            "pattern": "^[0-9]{17}$",
+            "example": "76561197960287930"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "Gordon"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "required": [
+          "id",
+          "steamId",
+          "displayName",
+          "avatarUrl"
+        ]
       }
     },
     "parameters": {}
@@ -388,6 +421,57 @@
           },
           "429": {
             "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Current user",
+        "description": "The signed-in user’s own profile. Call on load with credentials: 200 means signed in, 401 means signed out. Sent with `Cache-Control: no-store`.",
+        "responses": {
+          "200": {
+            "description": "The signed-in user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Me"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
             "content": {
               "application/json": {
                 "schema": {

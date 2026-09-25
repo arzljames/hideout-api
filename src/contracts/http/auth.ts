@@ -95,3 +95,30 @@ registry.registerPath({
     403: errorResponse('Origin or Content-Type check failed.'),
   },
 });
+
+/** The signed-in user's own profile. A plain object so fields can be added without breaking clients. */
+export const Me = registry.register(
+  'Me',
+  z.object({
+    id: z.guid(),
+    steamId: z.string().regex(/^[0-9]{17}$/).openapi({ example: '76561197960287930' }),
+    displayName: z.string().min(1).max(64).openapi({ example: 'Gordon' }),
+    avatarUrl: z.url({ protocol: /^https$/ }).nullable(),
+  }),
+);
+export type Me = z.infer<typeof Me>;
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/auth/me',
+  tags: ['auth'],
+  summary: 'Current user',
+  description:
+    'The signed-in user’s own profile. Call on load with credentials: 200 means signed in, 401 means signed out. ' +
+    'Sent with `Cache-Control: no-store`.',
+  responses: {
+    200: { description: 'The signed-in user.', content: { 'application/json': { schema: Me } } },
+    ...authedErrors,
+    500: errorResponse('Unexpected server error.'),
+  },
+});
