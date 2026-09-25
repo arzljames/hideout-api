@@ -1,4 +1,4 @@
-import { RoomServiceClient, WebhookReceiver } from 'livekit-server-sdk';
+import { RoomServiceClient, ServerError, WebhookReceiver } from 'livekit-server-sdk';
 import { env } from '../config/env.js';
 
 function httpUrl(url: string): string {
@@ -15,4 +15,12 @@ export const livekitWebhooks = new WebhookReceiver(env.LIVEKIT_API_KEY, env.LIVE
 
 export function voiceRoomName(channelId: string): string {
   return `voice_${channelId}`;
+}
+
+/**
+ * True only for LiveKit's "not found" (Twirp code `not_found` or HTTP 404), e.g. deleting a
+ * room nobody ever joined. Anything else, including network errors, is a real failure.
+ */
+export function isLivekitNotFound(err: unknown): boolean {
+  return err instanceof ServerError && (err.code === 'not_found' || err.status === 404);
 }

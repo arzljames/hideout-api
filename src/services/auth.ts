@@ -1,5 +1,6 @@
 import { Me, type AuthRedirectErrorCode } from '../contracts/http/auth.js';
 import { db } from '../db/client.js';
+import { dbFailure } from '../db/errors.js';
 import { fallbackDisplayName, getPlayerSummary, steamReturnTo, verifyCallback } from '../lib/steam.js';
 import { InternalError } from '../errors.js';
 import { hashSessionToken, newSessionToken, SESSION_TTL_SECONDS, TOKEN_PATTERN } from '../lib/session.js';
@@ -15,17 +16,6 @@ export interface SteamProfile {
   avatarUrl: string | null;
   /** True when Steam's profile API failed: an existing profile keeps its stored name and avatar. */
   keepExistingProfile: boolean;
-}
-
-interface DbError {
-  code?: string;
-  message?: string;
-}
-
-/** Keeps only the Postgres code and message for logs; details/hints can carry row values. */
-function dbFailure(operation: string, error: DbError): InternalError {
-  const cause = new Error(`${operation} failed: ${error.message ?? 'unknown error'}`);
-  return new InternalError(Object.assign(cause, { code: error.code }));
 }
 
 /** Returns the live session for a cookie token, or null if it is malformed, unknown, or expired. */

@@ -2,5 +2,6 @@
 import './common.js';
 import './system.js';
 import './auth.js';
+import './rooms.js';
 
 export { registry } from './registry.js';
