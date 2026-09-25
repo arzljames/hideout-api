@@ -38,6 +38,11 @@ describe('broadcast', () => {
     });
   });
 
+  it('lowercases ids so topics match what clients subscribe to', async () => {
+    await broadcastToChannel(message.channelId.toUpperCase(), 'message:created', { message });
+    expect(sentBody()).toMatchObject({ messages: [{ topic: `channel:${message.channelId}` }] });
+  });
+
   it('strips fields the contract does not define', async () => {
     const leaky = { roomId: message.channelId, steamApiKey: 'secret' };
     await broadcastToUser(message.author.id, 'member:removed', leaky);
