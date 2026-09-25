@@ -14,7 +14,14 @@ import {
 } from '../lib/session.js';
 import { MINUTE, navigationLimiter } from '../middleware/rateLimits.js';
 import { authOf, requireAuth } from '../middleware/requireAuth.js';
-import { completeSteamLogin, deleteAllSessions, deleteSession, endSessionByToken } from '../services/auth.js';
+import { UnauthenticatedError } from '../errors.js';
+import {
+  completeSteamLogin,
+  deleteAllSessions,
+  deleteSession,
+  endSessionByToken,
+  getProfile,
+} from '../services/auth.js';
 import { documentedRouter } from './documentedRouter.js';
 
 function redirectWithError(res: Response, code: AuthRedirectErrorCode): void {
@@ -87,4 +94,10 @@ export const authRouter = documentedRouter('/api/auth')
     await deleteAllSessions(authOf(req).profileId);
     res.clearCookie(SESSION_COOKIE, clearSessionCookieOptions);
     res.status(204).end();
+  })
+  .get('/me', requireAuth, async (req, res) => {
+    // A valid session whose profile is gone is treated as signed out, never a partial body.
+    const me = await getProfile(authOf(req).profileId);
+    if (!me) throw new UnauthenticatedError();
+    res.set('Cache-Control', 'no-store').json(me);
   });

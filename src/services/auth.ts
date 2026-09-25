@@ -1,4 +1,4 @@
-import type { AuthRedirectErrorCode } from '../contracts/http/auth.js';
+import { Me, type AuthRedirectErrorCode } from '../contracts/http/auth.js';
 import { db } from '../db/client.js';
 import { fallbackDisplayName, getPlayerSummary, steamReturnTo, verifyCallback } from '../lib/steam.js';
 import { InternalError } from '../errors.js';
@@ -97,4 +97,30 @@ export async function endSessionByToken(token: string | undefined): Promise<void
   if (!token) return;
   const session = await findSession(token);
   if (session) await deleteSession(session.sessionId);
+}
+
+/**
+ * The signed-in user's own profile, or null if the profile row is gone. A stored avatar
+ * that isn't a valid https URL comes back as null instead of failing the request.
+ */
+export async function getProfile(profileId: string): Promise<Me | null> {
+  const { data, error } = await db
+    .from('profiles')
+    .select('id, steam_id, display_name, avatar_url')
+    .eq('id', profileId)
+    .maybeSingle<{ id: string; steam_id: string; display_name: string; avatar_url: string | null }>();
+
+  if (error) throw dbFailure('profile lookup', error);
+  if (!data) return null;
+
+  const avatar = Me.shape.avatarUrl.safeParse(data.avatar_url);
+  const parsed = Me.safeParse({
+    id: data.id,
+    steamId: data.steam_id,
+    displayName: data.display_name,
+    avatarUrl: avatar.success ? avatar.data : null,
+  });
+  // A row that breaks the contract is a server bug; never send a partial or invalid body.
+  if (!parsed.success) throw new InternalError(new Error('profile row does not match the Me schema'));
+  return parsed.data;
 }
