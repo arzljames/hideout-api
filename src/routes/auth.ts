@@ -12,15 +12,16 @@ import {
   SESSION_COOKIE,
   sessionCookieOptions,
 } from '../lib/session.js';
-import { MINUTE, navigationLimiter } from '../middleware/rateLimits.js';
+import { MINUTE, navigationLimiter, realtimeTokenLimiter } from '../middleware/rateLimits.js';
 import { authOf, requireAuth } from '../middleware/requireAuth.js';
 import { UnauthenticatedError } from '../errors.js';
 import {
   completeSteamLogin,
-  deleteAllSessions,
   deleteSession,
   endSessionByToken,
   getProfile,
+  issueRealtimeToken,
+  signOutEverywhere,
 } from '../services/auth.js';
 import { documentedRouter } from './documentedRouter.js';
 
@@ -91,7 +92,7 @@ export const authRouter = documentedRouter('/api/auth')
     res.status(204).end();
   })
   .post('/logout-all', requireAuth, async (req, res) => {
-    await deleteAllSessions(authOf(req).profileId);
+    await signOutEverywhere(authOf(req).profileId);
     res.clearCookie(SESSION_COOKIE, clearSessionCookieOptions);
     res.status(204).end();
   })
@@ -100,4 +101,8 @@ export const authRouter = documentedRouter('/api/auth')
     const me = await getProfile(authOf(req).profileId);
     if (!me) throw new UnauthenticatedError();
     res.set('Cache-Control', 'no-store').json(me);
+  })
+  // No room claims in the token: Realtime RLS checks current membership on join and on setAuth.
+  .get('/realtime-token', requireAuth, realtimeTokenLimiter, (req, res) => {
+    res.set('Cache-Control', 'no-store').json(issueRealtimeToken(authOf(req).profileId));
   });

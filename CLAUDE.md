@@ -64,12 +64,13 @@ Routes contain no business logic. Services never see `req`/`res`; they call `rea
 
 ```bash
 npm install
-npm run dev               # tsx watch on :3001; API docs at http://localhost:3001/api/docs
+npm run dev               # tsx watch on :3001 (also restarts when .env changes); API docs at http://localhost:3001/api/docs
 npm run typecheck
 npm run lint
 npm run test
 npm run build             # tsc → dist/
 npm run contracts         # regenerate contract/openapi.json and contract/events.schema.json
+npm run jwt:keygen        # humans only: prints a private signing key (ES256 JWK for SUPABASE_JWT_PRIVATE_JWK); interactive terminal required, agents never run it
 npx supabase migration new <name>   # create a migration file (offline)
 npm run db:status         # migrations applied on the dev project vs local
 npm run db:push           # apply pending migrations to the dev project
@@ -134,7 +135,8 @@ All channels are **private** (`config: { private: true }`), so Supabase checks R
 
 **Realtime auth**
 - `GET /api/auth/realtime-token` returns a Supabase JWT (`role: authenticated`, `sub: profiles.id`, TTL 15 minutes) plus `expiresAt`. The browser refreshes it before expiry.
-- Verify the custom-JWT approach against the current Supabase docs for the project's JWT signing configuration before changing `token.ts`.
+- Tokens are signed ES256 with our own P-256 key (`SUPABASE_JWT_PRIVATE_JWK`, one-line private JWK from `npm run jwt:keygen`), with a `kid` header equal to the key's `kid`. The same JWK is imported in Dashboard → Project Settings → JWT Keys as a standby key and rotated to current. Not the legacy HS256 JWT secret; but don't revoke the legacy secret while `SUPABASE_SERVICE_ROLE_KEY` is a legacy key.
+- Verify the custom-JWT approach against the current Supabase docs (https://supabase.com/docs/guides/auth/signing-keys) before changing `token.ts`.
 - **Revocation:** Realtime checks policies when a browser joins a channel and when it sends a refreshed token, not per message. On removal (or room deletion), Node broadcasts `member:removed` to `user:<id>` and an honest client leaves; a removed member fails the policy on their next join or token refresh. A client that never refreshes keeps access until its current token's `exp` (15 minutes at most). Tokens are per user, not per room. Confirm current Supabase behavior before relying on anything stronger.
 
 ## Deployment topology (important for cookies)
@@ -193,6 +195,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 
 - `GET /api/health` (liveness), `GET /api/ready` (DB, Realtime, and LiveKit reachable).
 - Graceful shutdown with a 10s drain. `trust proxy` set for one proxy hop.
+- Supabase is deprecating the legacy `anon`/`service_role` keys by the end of 2026: move `SUPABASE_SERVICE_ROLE_KEY` to an `sb_secret_...` key (separate chore), after which the legacy JWT secret can be revoked.
 - New env vars go in `.env.example` and `src/config/env.ts` in the same change. Tooling-only vars the app never reads (`SUPABASE_DB_URL`, `SUPABASE_DEV_PROJECT_REF`, `SUPABASE_DB_CA_CERT`) go in `.env.example` and are validated by the script that uses them.
 
 ## Conventions

@@ -1,9 +1,11 @@
-import { Me, type AuthRedirectErrorCode } from '../contracts/http/auth.js';
+import { Me, type AuthRedirectErrorCode, type RealtimeToken } from '../contracts/http/auth.js';
 import { db } from '../db/client.js';
 import { dbFailure } from '../db/errors.js';
 import { fallbackDisplayName, getPlayerSummary, steamReturnTo, verifyCallback } from '../lib/steam.js';
 import { InternalError } from '../errors.js';
 import { hashSessionToken, newSessionToken, SESSION_TTL_SECONDS, TOKEN_PATTERN } from '../lib/session.js';
+import { broadcastToUser } from '../realtime/broadcast.js';
+import { mintRealtimeToken } from '../realtime/token.js';
 
 export interface AuthSession {
   profileId: string;
@@ -80,6 +82,22 @@ export async function deleteSession(sessionId: string): Promise<void> {
 export async function deleteAllSessions(profileId: string): Promise<void> {
   const { error } = await db.from('sessions').delete().eq('profile_id', profileId);
   if (error) throw dbFailure('session delete-all', error);
+}
+
+/**
+ * Deletes every session of the profile, then tells the user's other open tabs and devices
+ * via `session:expired` on user:<id>. Best-effort: the sessions are already gone, so a
+ * failed broadcast never fails sign-out (broadcastToUser never throws).
+ * Single-device logout must not broadcast: it would sign out the user's other devices.
+ */
+export async function signOutEverywhere(profileId: string): Promise<void> {
+  await deleteAllSessions(profileId);
+  await broadcastToUser(profileId, 'session:expired', {});
+}
+
+/** A Realtime JWT for the signed-in profile. The id comes from the session, never the request. */
+export function issueRealtimeToken(profileId: string): RealtimeToken {
+  return mintRealtimeToken(profileId);
 }
 
 /** Deletes the session behind a cookie token, if it is live. No-op for a missing or unknown token. */

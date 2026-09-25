@@ -13,6 +13,7 @@ import {
   steamFetch,
   SUMMARIES_PREFIX,
   summariesResponse,
+  urlOf,
 } from './helpers/fakeSteam.js';
 
 /*
@@ -40,7 +41,12 @@ const savedEnv = { LOG_LEVEL: process.env.LOG_LEVEL, TRUST_PROXY: process.env.TR
 process.env.LOG_LEVEL = 'trace';
 process.env.TRUST_PROXY = '1';
 
-vi.stubGlobal('fetch', steamFetch);
+// Realtime broadcasts go to their own mock (the real schema check in broadcast.ts still runs); everything else is Steam.
+const BROADCAST_URL = 'http://127.0.0.1:54321/realtime/v1/api/broadcast';
+const broadcastFetch = vi.fn<typeof fetch>();
+const routedFetch: typeof fetch = (input, init) =>
+  urlOf(input) === BROADCAST_URL ? broadcastFetch(input, init) : steamFetch(input, init);
+vi.stubGlobal('fetch', routedFetch);
 
 const { createApp } = await import('../src/app.js');
 const { hashSessionToken, LOGIN_STATE_COOKIE, newRandomToken, SESSION_COOKIE } = await import(
@@ -138,8 +144,18 @@ function sessionTokenFrom(res: request.Response): string {
 beforeEach(() => {
   resetFakeDb();
   resetFakeSteam();
+  broadcastFetch.mockReset();
+  broadcastFetch.mockImplementation(() => Promise.resolve(new Response(null, { status: 202 })));
   logLines.length = 0;
 });
+
+/** Broadcasts sent to the Realtime REST endpoint, as { topic, event, payload, private }. */
+function sentBroadcasts(): unknown[] {
+  return broadcastFetch.mock.calls.flatMap(([, init]) => {
+    const body = JSON.parse(init?.body as string) as { messages: unknown[] };
+    return body.messages;
+  });
+}
 
 afterEach(() => {
   // Secrets must never reach the logs, whatever the test did.
@@ -621,6 +637,45 @@ describe('POST /api/auth/logout and /logout-all', () => {
     expect(res.status).toBe(204);
     expect(deletes()).toEqual([{ table: 'sessions', calls: [['delete', []], ['eq', ['profile_id', PROFILE_ID]]] }]);
     expect(cookieNamed(res, SESSION_COOKIE)).toMatch(new RegExp(`^${SESSION_COOKIE}=;`));
+  });
+
+  it('logout-all broadcasts exactly one session:expired to user:<id> after the delete', async () => {
+    liveSession();
+    const res = await post('/api/auth/logout-all', good);
+    expect(res.status).toBe(204);
+    expect(sentBroadcasts()).toEqual([
+      { topic: `user:${PROFILE_ID}`, event: 'session:expired', payload: {}, private: true },
+    ]);
+    const deleteAt = fakeDb.from.mock.invocationCallOrder.at(-1) ?? Infinity;
+    expect(broadcastFetch.mock.invocationCallOrder[0]).toBeGreaterThan(deleteAt);
+  });
+
+  it('logout-all broadcasts nothing when the delete fails', async () => {
+    liveSession();
+    results.delete = { error: { code: 'XX000', message: 'db down' } };
+    const res = await post('/api/auth/logout-all', good);
+    expect(res.status).toBe(500);
+    expect(broadcastFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['rejects', () => Promise.resolve(new Response(null, { status: 500 }))],
+    ['throws', () => Promise.reject(new Error('realtime down'))],
+  ])('logout-all still returns 204 and clears the cookie when the broadcast %s', async (_name, impl) => {
+    liveSession();
+    broadcastFetch.mockImplementation(impl);
+    const res = await post('/api/auth/logout-all', good);
+    expect(res.status).toBe(204);
+    expect(deletes()).toHaveLength(1);
+    expect(broadcastFetch).toHaveBeenCalledTimes(1);
+    expect(cookieNamed(res, SESSION_COOKIE)).toMatch(new RegExp(`^${SESSION_COOKIE}=;`));
+  });
+
+  it('logout (this device only) never broadcasts', async () => {
+    liveSession();
+    const res = await post('/api/auth/logout', good);
+    expect(res.status).toBe(204);
+    expect(broadcastFetch).not.toHaveBeenCalled();
   });
 });
 

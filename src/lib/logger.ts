@@ -53,6 +53,13 @@ export const logger = pino({
       '*.apiKey',
       '*.password',
       '*.serviceRoleKey',
+      // Realtime JWT signing key (raw JWK string or parsed KeyObject).
+      'privateKey',
+      'SUPABASE_JWT_PRIVATE_JWK',
+      'SUPABASE_JWT_SIGNING_KEY',
+      '*.privateKey',
+      '*.SUPABASE_JWT_PRIVATE_JWK',
+      '*.SUPABASE_JWT_SIGNING_KEY',
     ],
     censor: '[redacted]',
   },

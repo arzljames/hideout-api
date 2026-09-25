@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetFakeDb, results } from './helpers/fakeDb.js';
@@ -20,6 +21,11 @@ const overrides: Record<string, string> = {
   SUPABASE_URL: 'https://project.supabase.test',
   LIVEKIT_URL: 'wss://livekit.hideout.test',
   TRUST_PROXY: '1',
+  // Production refuses the committed test key, so use a throwaway one.
+  SUPABASE_JWT_PRIVATE_JWK: JSON.stringify({
+    ...generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey.export({ format: 'jwk' }),
+    kid: 'auth-https-test',
+  }),
 };
 const saved = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
 Object.assign(process.env, overrides);
