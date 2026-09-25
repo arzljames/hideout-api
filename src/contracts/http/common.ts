@@ -20,7 +20,7 @@ export const ErrorResponse = registry.register(
 export const Id = z.guid();
 
 export const CursorQuery = z.object({
-  cursor: z.string().optional(),
+  cursor: z.string().max(256).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 

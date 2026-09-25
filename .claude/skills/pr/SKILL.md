@@ -24,7 +24,7 @@ Run `git diff origin/main...HEAD --stat` plus the uncommitted `git diff` / `git 
 - **Env:** new env vars (must be in both `.env.example` and `src/config/env.ts`)
 - **Dependencies:** changes to `package.json` / lockfile (each new dependency needs a stated reason)
 
-If **Contract** changed or anything the frontend sees changed, confirm the hideout-web handoff doc (Claude Docs connector, see `/new-feature` Phase 5) was updated; it is never part of the PR.
+Every PR carries the hideout-web handoff in its "Frontend handoff" section (see `/new-feature` Phase 5), even when nothing the frontend sees changed (then say so). If the Claude Docs connector is available, also mirror it into the shared handoff doc; if not, note in the PR that the doc still needs updating.
 
 Flag anything that should not ship: `.env*` files, secrets, debug logs, stray `console.log`, edits to already-applied migrations, hand edits to `contract/*.json`.
 
@@ -67,7 +67,7 @@ Fix failures before continuing, then re-run the failed command.
 <"None." or: each endpoint/event added, changed, or deprecated; confirm every change is additive (no breaking changes)>
 
 ### Frontend handoff (hideout-web)
-<only if contract changed: new/changed fields, events, error codes, and what the web repo needs to regenerate or build>
+<always: endpoints and how to call them, flows, new/changed fields, events and error codes, request rules, build checklist, "not built yet", what the web repo needs to regenerate or build, and a paste-ready `/new-feature` prompt for hideout-web. If nothing the frontend sees changed, say "No frontend changes." Add "Claude Docs handoff doc: updated" or "not updated (connector unavailable)".>
 
 ## Database
 <"None." or: migration file names, new tables/columns/policies, pgTAP coverage>

@@ -49,3 +49,5 @@ export const realtimeTokenLimiter = limiter(HOUR, 30, byUser);
 export const messageLimiter = limiter(10_000, 10, byUser);
 export const inviteCreateLimiter = limiter(HOUR, 20, byUser);
 export const inviteRedeemLimiter = limiter(MINUTE, 10, byUser);
+export const roomCreateLimiter = limiter(HOUR, 10, byUser);
+export const roomUpdateLimiter = limiter(HOUR, 30, byUser);

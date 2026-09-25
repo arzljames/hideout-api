@@ -107,7 +107,7 @@ hideout-web generates its TypeScript types from both. Rules:
 - Every REST endpoint is registered with `registry.registerPath` in `src/contracts/http/` (method, path, tags, summary, request, responses, error codes) so it appears in `openapi.json` and `/api/docs`. Public endpoints set `security: []`; everything else inherits the `session` cookie scheme. **Every new feature adds its endpoints to Swagger.** This is enforced: routes are created with `documentedRouter()` (`src/routes/documentedRouter.ts`; plain Express `Router` is lint-banned in `src/routes`), which throws when a route isn't registered, so the app and every test fail until it is. Non-API routes (Swagger UI's own assets) use `.undocumented(reason, ...)`.
 - **No breaking changes** to existing endpoints or events (removing/renaming fields or events, changing types, new required fields). Add new fields or events, mark the old ones deprecated, remove only after hideout-web has shipped without them.
 - Every PR that changes `contract/` must say so in its description, with a summary for the frontend.
-- **Every feature updates the hideout-web handoff doc** in Claude Docs (https://claude.ai/code/artifact/fdbf4d28-6d8f-47b9-b973-4d0b93621bca) through the Docs connector, with a Changelog line. It is never committed to the repo or included in a PR. See `/new-feature` Phase 5.
+- **Every PR includes the hideout-web handoff** in its description (the "Frontend handoff" section of the `/pr` template), even when the contract didn't change. It is never committed to the repo. When the Docs connector is available, also mirror it into the shared handoff doc in Claude Docs (https://claude.ai/code/artifact/fdbf4d28-6d8f-47b9-b973-4d0b93621bca) with a Changelog line; an unavailable connector doesn't block the PR. See `/new-feature` Phase 5.
 
 ## Realtime design
 
@@ -158,7 +158,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - `invites` (id, room_id, created_by, kind: link | direct, token_hash, invitee_steam_id, max_uses, uses, expires_at, revoked_at, accepted_at, declined_at, created_at). **link**: shareable, token hash only, optional max uses and expiry. **direct**: to a SteamID (the person may not have signed in yet; it appears in their inbox when they do), one use, accept or decline; only one pending per room + SteamID, so revoke an expired pending one before re-inviting. Link expiry and max uses are optional in the DB; the API sets allowed values in Zod.
 - Room icons: private Storage bucket `room-icons`; Node uploads and serves signed URLs. Browsers get no storage policies.
 - Ephemeral, never stored: online status and typing (Realtime Presence/Broadcast), voice speaking/muted/deafened (LiveKit), voice device and push-to-talk settings (hideout-web localStorage).
-- Multi-step writes are Postgres functions (service role only): `create_login_session`, `create_room`, `redeem_invite_link`, `respond_to_direct_invite`, `transfer_ownership`, `delete_room`, `remove_member`, `change_role`. Their error SQLSTATEs map to HTTP in the migration header (`HX001` → 404 for non-members and missing rooms, `HX002` → 403 for members lacking the role). Realtime access is `private.can_access_topic(topic)`, the only Hideout function `authenticated` can execute.
+- Multi-step writes are Postgres functions (service role only): `create_login_session`, `create_room`, `update_room`, `redeem_invite_link`, `respond_to_direct_invite`, `transfer_ownership`, `delete_room`, `remove_member`, `change_role`. Their error SQLSTATEs map to HTTP in the migration header (`HX001` → 404 for non-members and missing rooms, `HX002` → 403 for members lacking the role). Realtime access is `private.can_access_topic(topic)`, the only Hideout function `authenticated` can execute.
 - Invite preview "N online": not decided yet. Presence lives only in Realtime and Node holds no connections, so the preview shows the member count only until a design is chosen.
 
 ## Non-negotiable rules
@@ -186,7 +186,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - CSRF: state-changing routes require `Content-Type: application/json` and an `Origin` equal to `WEB_ORIGIN`.
 - Invite tokens: 32 random bytes, base64url; store SHA-256 only; redeem in a Postgres function that locks the invite row.
 - LiveKit tokens: identity = profile id, room = `voice_<channelId>`, TTL 10 min. Webhooks verified with `WebhookReceiver` on the raw body.
-- Rate limits: auth 10/min/IP (separately for `/api/auth/steam` and the callback; both redirect with `?auth_error=RATE_LIMITED` instead of a JSON 429, since they are browser navigations), realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user.
+- Rate limits: auth 10/min/IP (separately for `/api/auth/steam` and the callback; both redirect with `?auth_error=RATE_LIMITED` instead of a JSON 429, since they are browser navigations), realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user, room create 10/hour/user, room update 30/hour/user.
 - Pino redaction covers cookies, authorization headers, tokens, and keys.
 
 ## Operational

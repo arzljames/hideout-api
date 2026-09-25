@@ -4,6 +4,7 @@ import { authRouter } from './auth.js';
 import { createContractRouter } from './contract.js';
 import { docsRouter } from './docs.js';
 import { mount } from './documentedRouter.js';
+import { roomsRouter } from './rooms.js';
 import { systemRouter } from './system.js';
 
 export const apiRouter = Router();
@@ -18,3 +19,4 @@ mount(apiRouter, authRouter);
 
 // Everything mounted below this line requires a session.
 apiRouter.use(requireAuth);
+mount(apiRouter, roomsRouter);
