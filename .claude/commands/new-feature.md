@@ -52,7 +52,7 @@ Finish with a summary containing:
 - Review verdicts and anything deferred
 - **Frontend handoff for hideout-web:** the `contract/openapi.json` and `contract/events.schema.json` changes, new error codes, and a suggested `/new-feature` prompt for the web repo
 
-**Always update the hideout-web handoff doc** (every feature, even small ones) through the Claude Docs connector: https://claude.ai/code/artifact/fdbf4d28-6d8f-47b9-b973-4d0b93621bca. It lives only there; never write it into the repo or the PR. Add or change the sections this feature touches (endpoints, flows, error codes, request rules, realtime topics, build checklist, the paste-ready `/new-feature` prompt, "Not built yet"), and add a Changelog line (date, PR, what hideout-web must do). If the connector is unavailable, stop before Phase 6 and ask me to reconnect it; don't skip the update or write it elsewhere.
+**Always write the hideout-web handoff** (every feature, even small ones) for the PR description's "Frontend handoff" section: endpoints, flows, error codes, request rules, realtime topics, build checklist, the paste-ready `/new-feature` prompt, "Not built yet", and what hideout-web must do. Never commit it to the repo. When the Claude Docs connector is available, also update the shared handoff doc (https://claude.ai/code/artifact/fdbf4d28-6d8f-47b9-b973-4d0b93621bca) with the sections this feature touches and a Changelog line (date, PR, what hideout-web must do). If the connector is unavailable, continue to Phase 6 and say in the summary that the doc wasn't updated.
 
 ## Phase 6: Pull request
 
