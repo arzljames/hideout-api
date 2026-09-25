@@ -64,7 +64,7 @@ Routes contain no business logic. Services never see `req`/`res`; they call `rea
 
 ```bash
 npm install
-npm run dev               # tsx watch on :3001; API docs at http://localhost:3001/api/docs
+npm run dev               # tsx watch on :3001 (also restarts when .env changes); API docs at http://localhost:3001/api/docs
 npm run typecheck
 npm run lint
 npm run test
