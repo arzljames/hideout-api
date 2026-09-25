@@ -107,6 +107,7 @@ hideout-web generates its TypeScript types from both. Rules:
 - Every REST endpoint is registered with `registry.registerPath` in `src/contracts/http/` (method, path, tags, summary, request, responses, error codes) so it appears in `openapi.json` and `/api/docs`. Public endpoints set `security: []`; everything else inherits the `session` cookie scheme. **Every new feature adds its endpoints to Swagger.** This is enforced: routes are created with `documentedRouter()` (`src/routes/documentedRouter.ts`; plain Express `Router` is lint-banned in `src/routes`), which throws when a route isn't registered, so the app and every test fail until it is. Non-API routes (Swagger UI's own assets) use `.undocumented(reason, ...)`.
 - **No breaking changes** to existing endpoints or events (removing/renaming fields or events, changing types, new required fields). Add new fields or events, mark the old ones deprecated, remove only after hideout-web has shipped without them.
 - Every PR that changes `contract/` must say so in its description, with a summary for the frontend.
+- **Every feature updates the hideout-web handoff doc**, `docs/hideout-web-handoff.md` (source of truth, committed in the same PR, with a Changelog line), and mirrors it to the shared Claude doc when the Docs connector is available. See `/new-feature` Phase 5.
 
 ## Realtime design
 
