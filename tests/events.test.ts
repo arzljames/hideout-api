@@ -19,9 +19,9 @@ describe('realtime event contract', () => {
     expect(names('user')).toEqual(['invite:received', 'member:removed', 'session:expired']);
   });
 
-  it('only lets browsers send typing on channel topics', () => {
-    expect(Object.keys(clientEvents)).toEqual(['channel']);
-    expect(Object.keys(clientEvents.channel)).toEqual(['typing']);
+  it('only lets browsers send typing, and only on the typing topic', () => {
+    expect(Object.keys(clientEvents)).toEqual(['typing']);
+    expect(Object.keys(clientEvents.typing)).toEqual(['typing']);
   });
 
   it('rejects non-https avatar URLs (e.g. javascript:)', () => {

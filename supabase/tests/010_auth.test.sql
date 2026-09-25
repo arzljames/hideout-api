@@ -74,7 +74,7 @@ select ok(
 set local role anon;
 select throws_ok($$ select * from public.profiles $$, '42501', null, 'anon cannot select profiles');
 select throws_ok(
-  $$ insert into public.profiles (steam_id, display_name) values ('00000000000000009', 'x') $$,
+  $$ insert into public.profiles (steam_id, display_name) values ('76561190000000009', 'x') $$,
   '42501', null, 'anon cannot insert profiles'
 );
 select throws_ok($$ update public.profiles set display_name = 'x' $$, '42501', null, 'anon cannot update profiles');
@@ -94,7 +94,7 @@ set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"00000000-0000-0000-0000-000000000001","role":"authenticated"}', true) is not null as _claims;
 select throws_ok($$ select * from public.profiles $$, '42501', null, 'authenticated cannot select profiles');
 select throws_ok(
-  $$ insert into public.profiles (steam_id, display_name) values ('00000000000000009', 'x') $$,
+  $$ insert into public.profiles (steam_id, display_name) values ('76561190000000009', 'x') $$,
   '42501', null, 'authenticated cannot insert profiles'
 );
 select throws_ok($$ update public.profiles set display_name = 'x' $$, '42501', null, 'authenticated cannot update profiles');
@@ -112,14 +112,14 @@ reset role;
 -- create_login_session: only service_role may execute
 set local role anon;
 select throws_ok(
-  $$ select public.create_login_session('00000000000000009', 'x', null, repeat('0', 64), now() + interval '1 day') $$,
+  $$ select public.create_login_session('76561190000000009', 'x', null, repeat('0', 64), now() + interval '1 day') $$,
   '42501', null, 'anon cannot execute create_login_session'
 );
 reset role;
 
 set local role authenticated;
 select throws_ok(
-  $$ select public.create_login_session('00000000000000009', 'x', null, repeat('0', 64), now() + interval '1 day') $$,
+  $$ select public.create_login_session('76561190000000009', 'x', null, repeat('0', 64), now() + interval '1 day') $$,
   '42501', null, 'authenticated cannot execute create_login_session'
 );
 reset role;
@@ -144,7 +144,7 @@ select ok(
   set_config(
     'test.p1',
     public.create_login_session(
-      '00000000000000001', 'Alice', 'https://avatars.example/a1.jpg', repeat('a', 64), now() + interval '1 day'
+      '76561190000000001', 'Alice', 'https://avatars.example/a1.jpg', repeat('a', 64), now() + interval '1 day'
     )::text,
     true
   ) is not null,
@@ -176,7 +176,7 @@ values (current_setting('test.p1')::uuid, repeat('e', 64), now() - interval '2 h
 set local role service_role;
 select is(
   public.create_login_session(
-    '00000000000000001', 'Alice Renamed', 'https://avatars.example/a2.jpg', repeat('b', 64), now() + interval '1 day'
+    '76561190000000001', 'Alice Renamed', 'https://avatars.example/a2.jpg', repeat('b', 64), now() + interval '1 day'
   ),
   current_setting('test.p1')::uuid,
   'second login with the same steam_id returns the same profile id'
@@ -184,7 +184,7 @@ select is(
 reset role;
 
 select is(
-  (select count(*)::int from public.profiles where steam_id = '00000000000000001'),
+  (select count(*)::int from public.profiles where steam_id = '76561190000000001'),
   1,
   'second login does not create a second profile'
 );
@@ -212,7 +212,7 @@ select is(
 set local role service_role;
 select is(
   public.create_login_session(
-    '00000000000000001', 'Fallback Name', null, repeat('c', 64), now() + interval '1 day', true
+    '76561190000000001', 'Fallback Name', null, repeat('c', 64), now() + interval '1 day', true
   ),
   current_setting('test.p1')::uuid,
   'p_keep_existing_profile login returns the existing profile id'
@@ -235,7 +235,7 @@ select ok(
   set_config(
     'test.p3',
     public.create_login_session(
-      '00000000000000003', 'Fallback Name', null, repeat('d', 64), now() + interval '1 day', true
+      '76561190000000003', 'Fallback Name', null, repeat('d', 64), now() + interval '1 day', true
     )::text,
     true
   ) is not null,
@@ -256,19 +256,19 @@ select throws_ok(
   '23514', null, 'invalid steam_id is rejected'
 );
 select throws_ok(
-  $$ select public.create_login_session('00000000000000002', 'Bob', null, 'NOT-A-HASH', now() + interval '1 day') $$,
+  $$ select public.create_login_session('76561190000000002', 'Bob', null, 'NOT-A-HASH', now() + interval '1 day') $$,
   '23514', null, 'invalid token_hash is rejected'
 );
 select throws_ok(
-  $$ select public.create_login_session('00000000000000002', 'Bob', null, repeat('f', 64), now() - interval '1 minute') $$,
+  $$ select public.create_login_session('76561190000000002', 'Bob', null, repeat('f', 64), now() - interval '1 minute') $$,
   '22023', null, 'expires_at in the past is rejected'
 );
 select throws_ok(
-  $$ select public.create_login_session('00000000000000002', 'Bob', null, repeat('a', 64), now() + interval '1 day') $$,
+  $$ select public.create_login_session('76561190000000002', 'Bob', null, repeat('a', 64), now() + interval '1 day') $$,
   '23505', null, 'duplicate token_hash is rejected'
 );
 select throws_ok(
-  $$ select public.create_login_session('00000000000000002', 'Bob', 'http://insecure.example/a.jpg', repeat('f', 64), now() + interval '1 day') $$,
+  $$ select public.create_login_session('76561190000000002', 'Bob', 'http://insecure.example/a.jpg', repeat('f', 64), now() + interval '1 day') $$,
   '23514', null, 'non-https avatar_url is rejected'
 );
 reset role;

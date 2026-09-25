@@ -6,17 +6,37 @@
     "room": {
       "pattern": "room:<roomId>",
       "private": true,
+      "clientsMay": {
+        "broadcast": false,
+        "presence": true
+      },
       "presence": {
         "$ref": "#/$defs/RoomPresence"
       }
     },
     "channel": {
       "pattern": "channel:<channelId>",
-      "private": true
+      "private": true,
+      "clientsMay": {
+        "broadcast": false,
+        "presence": false
+      }
+    },
+    "typing": {
+      "pattern": "typing:<channelId>",
+      "private": true,
+      "clientsMay": {
+        "broadcast": true,
+        "presence": false
+      }
     },
     "user": {
       "pattern": "user:<profileId>",
-      "private": true
+      "private": true,
+      "clientsMay": {
+        "broadcast": false,
+        "presence": false
+      }
     }
   },
   "serverEvents": {
@@ -224,10 +244,7 @@
                 "type": "string"
               },
               "icon": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "$ref": "#/$defs/RoomIcon"
               }
             },
             "required": [
@@ -279,7 +296,7 @@
     }
   },
   "clientEvents": {
-    "channel": {
+    "typing": {
       "typing": {
         "type": "object",
         "properties": {
@@ -347,7 +364,14 @@
           "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
         },
         "author": {
-          "$ref": "#/$defs/ProfileSummary"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProfileSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "body": {
           "type": "string"
@@ -416,6 +440,43 @@
         "position"
       ]
     },
+    "RoomIcon": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "emoji"
+            },
+            "emoji": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "emoji"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "image"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ]
+        }
+      ]
+    },
     "Room": {
       "type": "object",
       "properties": {
@@ -428,15 +489,7 @@
           "type": "string"
         },
         "icon": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "ownerId": {
-          "type": "string",
-          "format": "uuid",
-          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+          "$ref": "#/$defs/RoomIcon"
         },
         "createdAt": {
           "type": "string",
@@ -448,7 +501,6 @@
         "id",
         "name",
         "icon",
-        "ownerId",
         "createdAt"
       ]
     },
@@ -470,13 +522,20 @@
           "type": "string",
           "format": "date-time",
           "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        },
+        "currentGame": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "roomId",
         "user",
         "role",
-        "joinedAt"
+        "joinedAt",
+        "currentGame"
       ]
     },
     "RoomPresence": {

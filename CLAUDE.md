@@ -114,7 +114,8 @@ All channels are **private** (`config: { private: true }`), so Supabase checks R
 
 **Topics**
 - `room:<roomId>`: room-level events + Presence (who's online in the room)
-- `channel:<channelId>`: message events + typing broadcasts
+- `channel:<channelId>`: message events (receive-only for browsers)
+- `typing:<channelId>`: typing broadcasts between members (the only topic browsers may broadcast on)
 - `user:<profileId>`: events for one person (invites, removals, session expiry)
 
 **Events Node broadcasts** (defined in `src/contracts/events.ts`)
@@ -122,7 +123,7 @@ All channels are **private** (`config: { private: true }`), so Supabase checks R
 - `room:<id>`: `channel:created`, `channel:updated`, `channel:deleted`, `member:joined`, `member:left`, `member:role_changed`, `voice:participants`, `room:updated`, `room:deleted`
 - `user:<id>`: `invite:received`, `member:removed`, `session:expired`
 
-**Events browsers may send** (enforced by RLS insert policies): only `typing` on `channel:<id>` topics and Presence on `room:<id>` topics, and only for rooms the user belongs to.
+**Events browsers may send** (enforced by RLS insert policies): Broadcast only on `typing:<id>` topics and Presence only on `room:<id>` topics, and only for rooms the user belongs to. Realtime checks send rights once per join, without seeing the event or payload, so RLS can't limit which events are sent: that's why typing has its own topic, and why receivers treat typing and Presence payloads as untrusted (ignore userIds not in the member list). Accepted limits: a member can spoof another member's typing or Presence (never use them for authorization), and can flood `typing:`/Presence, which counts against the project-wide Realtime quota; clients subscribe only to the `typing` event, and if abuse appears, typing moves behind a rate-limited Node endpoint.
 
 **Rules**
 - Broadcast **only after** the database write succeeds, from services via `realtime/broadcast.ts`. Payloads are complete (e.g. a message includes author name and avatar) so the browser doesn't need a follow-up request.
@@ -133,7 +134,7 @@ All channels are **private** (`config: { private: true }`), so Supabase checks R
 **Realtime auth**
 - `GET /api/auth/realtime-token` returns a Supabase JWT (`role: authenticated`, `sub: profiles.id`, TTL 15 minutes) plus `expiresAt`. The browser refreshes it before expiry.
 - Verify the custom-JWT approach against the current Supabase docs for the project's JWT signing configuration before changing `token.ts`.
-- **Revocation:** channel access is checked when a browser joins, so a removed member may keep receiving until they rejoin or their token expires. On removal, Node broadcasts `member:removed` to `user:<id>` (the client leaves the channels) and stops issuing tokens for that room. The 15-minute TTL bounds the worst case. Confirm current Supabase behavior before relying on anything stronger.
+- **Revocation:** Realtime checks policies when a browser joins a channel and when it sends a refreshed token, not per message. On removal (or room deletion), Node broadcasts `member:removed` to `user:<id>` and an honest client leaves; a removed member fails the policy on their next join or token refresh. A client that never refreshes keeps access until its current token's `exp` (15 minutes at most). Tokens are per user, not per room. Confirm current Supabase behavior before relying on anything stronger.
 
 ## Deployment topology (important for cookies)
 
@@ -147,13 +148,17 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 
 ## Domain model
 
-- `profiles` (id uuid, steam_id unique, display_name, avatar_url, created_at, updated_at)
+- `profiles` (id uuid, steam_id unique, display_name, avatar_url, current_game, current_game_updated_at, created_at, updated_at). `current_game` caches Steam's "currently playing", refreshed by Node.
 - `sessions` (id, profile_id, token_hash, created_at, expires_at): server-side login sessions; `token_hash` = HMAC-SHA256(SESSION_SECRET, cookie token), the raw token is never stored
-- `rooms` (id, name, icon, owner_id, created_at, deleted_at)
-- `room_members` (room_id, user_id, role: owner | admin | member, joined_at) PK(room_id, user_id)
-- `channels` (id, room_id, type: text | voice, name, position)
-- `messages` (id, channel_id, author_id, body, created_at, edited_at, deleted_at)
-- `invites` (id, room_id, created_by, token_hash, invitee_id nullable, max_uses, uses, expires_at, revoked_at)
+- `rooms` (id, name 1–48, icon_emoji | icon_path (exactly one), created_at, updated_at, deleted_at). No owner column: ownership is the single `owner` row in `room_members`.
+- `room_members` (room_id, user_id, role: owner | admin | member, joined_at) PK(room_id, user_id); exactly one owner per live room: a partial unique index stops two, and a trigger stops deleting the owner row (so leaving, removal, or a profile delete can't orphan a room); ownership only moves via `transfer_ownership`
+- `channels` (id, room_id, type: text | voice, name 1–32, position, created_at, deleted_at); live names unique per room + type (case-insensitive). The default channel ("You'll land in #general") is the lowest-position live text channel.
+- `messages` (id, channel_id, author_id, body 1–2000, idempotency_key, created_at, edited_at, deleted_at); unique (author_id, idempotency_key) makes send-message retries safe
+- `invites` (id, room_id, created_by, kind: link | direct, token_hash, invitee_steam_id, max_uses, uses, expires_at, revoked_at, accepted_at, declined_at, created_at). **link**: shareable, token hash only, optional max uses and expiry. **direct**: to a SteamID (the person may not have signed in yet; it appears in their inbox when they do), one use, accept or decline; only one pending per room + SteamID, so revoke an expired pending one before re-inviting. Link expiry and max uses are optional in the DB; the API sets allowed values in Zod.
+- Room icons: private Storage bucket `room-icons`; Node uploads and serves signed URLs. Browsers get no storage policies.
+- Ephemeral, never stored: online status and typing (Realtime Presence/Broadcast), voice speaking/muted/deafened (LiveKit), voice device and push-to-talk settings (hideout-web localStorage).
+- Multi-step writes are Postgres functions (service role only): `create_login_session`, `create_room`, `redeem_invite_link`, `respond_to_direct_invite`, `transfer_ownership`, `delete_room`, `remove_member`, `change_role`. Their error SQLSTATEs map to HTTP in the migration header (`HX001` → 404 for non-members and missing rooms, `HX002` → 403 for members lacking the role). Realtime access is `private.can_access_topic(topic)`, the only Hideout function `authenticated` can execute.
+- Invite preview "N online": not decided yet. Presence lives only in Realtime and Node holds no connections, so the preview shows the member count only until a design is chosen.
 
 ## Non-negotiable rules
 

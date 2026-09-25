@@ -56,9 +56,16 @@ export function buildEventsContract(): object {
     $comment: 'Realtime contract for hideout-web. Generated from src/contracts/events.ts; do not edit.',
     version: packageJson.version,
     topics: {
-      room: { pattern: 'room:<roomId>', private: true, presence: { $ref: '#/$defs/RoomPresence' } },
-      channel: { pattern: 'channel:<channelId>', private: true },
-      user: { pattern: 'user:<profileId>', private: true },
+      // clientsMay = what browsers may send on the topic (enforced by realtime.messages RLS).
+      room: {
+        pattern: 'room:<roomId>',
+        private: true,
+        clientsMay: { broadcast: false, presence: true },
+        presence: { $ref: '#/$defs/RoomPresence' },
+      },
+      channel: { pattern: 'channel:<channelId>', private: true, clientsMay: { broadcast: false, presence: false } },
+      typing: { pattern: 'typing:<channelId>', private: true, clientsMay: { broadcast: true, presence: false } },
+      user: { pattern: 'user:<profileId>', private: true, clientsMay: { broadcast: false, presence: false } },
     },
     serverEvents: eventsOf('serverEvents'),
     clientEvents: eventsOf('clientEvents'),

@@ -59,7 +59,8 @@ async function broadcast<K extends TopicKind, E extends ServerEventName<K>>(
     return false;
   }
 
-  const topic = topics[kind](parsedId.data);
+  // Lowercase: can_access_topic only accepts lowercase uuids, and topics must match exactly.
+  const topic = topics[kind](parsedId.data.toLowerCase());
   try {
     const ok = await sendBroadcast(topic, event, parsed.data as object);
     if (!ok) logger.warn({ topic, event }, 'realtime broadcast rejected');
