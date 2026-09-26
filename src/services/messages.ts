@@ -8,12 +8,12 @@ import {
   type MessagePage,
   type SendMessageBody,
 } from '../contracts/http/messages.js';
-import { ProfileSummary } from '../contracts/http/rooms.js';
 import { db } from '../db/client.js';
 import { dbFailure, rpcFailure } from '../db/errors.js';
 import { ConflictError, InternalError, ValidationError } from '../errors.js';
 import { broadcastToChannel } from '../realtime/broadcast.js';
 import type { ChannelAccess } from './channels.js';
+import { ProfileRow, toProfileSummary } from './profiles.js';
 
 type RoleShape = z.infer<typeof Role>;
 
@@ -33,9 +33,6 @@ export interface MessageAccess {
 // ---------------------------------------------------------------------------
 // Row mapping
 // ---------------------------------------------------------------------------
-
-const ProfileRow = z.object({ id: z.guid(), display_name: z.string(), avatar_url: z.string().nullable() });
-type ProfileRow = z.infer<typeof ProfileRow>;
 
 /** The public.messages columns a message response needs (as the functions and selects return them). */
 const MessageRow = z.object({
@@ -63,23 +60,12 @@ const ListedMessageRow = MessageRow.extend({ profiles: ProfileRow.nullable() });
 
 const MESSAGE_COLUMNS = 'id, channel_id, author_id, body, created_at, edited_at';
 
-function toAuthor(profile: ProfileRow | null): z.infer<typeof ProfileSummary> | null {
-  if (!profile) return null;
-  // A stored avatar that isn't a valid https URL is dropped rather than failing the request.
-  const avatar = ProfileSummary.shape.avatarUrl.safeParse(profile.avatar_url);
-  return {
-    id: profile.id.toLowerCase(),
-    displayName: profile.display_name,
-    avatarUrl: avatar.success ? avatar.data : null,
-  };
-}
-
 /** Builds a contract Message; a result that breaks the contract is a server bug (values never logged). */
 function toMessage(operation: string, row: MessageRow, author: ProfileRow | null): Message {
   const parsed = Message.safeParse({
     id: row.id.toLowerCase(),
     channelId: row.channel_id.toLowerCase(),
-    author: toAuthor(author),
+    author: author ? toProfileSummary(author) : null,
     body: row.body,
     createdAt: row.created_at,
     editedAt: row.edited_at,

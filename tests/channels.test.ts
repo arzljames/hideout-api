@@ -18,7 +18,12 @@ import { fakeDb, firstArg, queries, resetFakeDb, results, type DbResult, type Re
  */
 
 const logLines = vi.hoisted<string[]>(() => []);
-const livekit = vi.hoisted(() => ({ deleteRoom: vi.fn<(name: string) => Promise<void>>() }));
+const livekit = vi.hoisted(() => ({
+  deleteRoom: vi.fn<(name: string) => Promise<void>>(),
+  listParticipants: vi.fn<(room: string) => Promise<{ identity: string }[]>>(),
+  // Typed with the options argument so tests can assert it is never passed.
+  removeParticipant: vi.fn<(room: string, identity: string, options?: { revokeTokenTs?: bigint }) => Promise<void>>(),
+}));
 
 vi.mock('pino', async (importOriginal) => {
   const actual = await importOriginal<typeof PinoModule>();
@@ -32,7 +37,11 @@ vi.mock('pino', async (importOriginal) => {
 vi.mock('../src/db/client.js', async () => ({ db: (await import('./helpers/fakeDb.js')).fakeDb }));
 vi.mock('../src/lib/livekit.js', async (importOriginal) => ({
   ...(await importOriginal<typeof LivekitModule>()),
-  livekitRooms: { deleteRoom: livekit.deleteRoom },
+  livekitRooms: {
+    deleteRoom: livekit.deleteRoom,
+    listParticipants: livekit.listParticipants,
+    removeParticipant: livekit.removeParticipant,
+  },
 }));
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -387,6 +396,11 @@ beforeEach(() => {
   fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 202 })));
   livekit.deleteRoom.mockReset();
   livekit.deleteRoom.mockResolvedValue(undefined);
+  // Nobody joined by default: LiveKit reports the room not found.
+  livekit.listParticipants.mockReset();
+  livekit.listParticipants.mockRejectedValue(new ServerError('not_found', 'no room', 404, 'not_found'));
+  livekit.removeParticipant.mockReset();
+  livekit.removeParticipant.mockResolvedValue(undefined);
   // A fresh user per test also isolates the per-user rate limiter, whose state is module-level.
   world = { me: randomUUID(), token: newRandomToken(), rooms: [], channels: [], members: [] };
   install();
@@ -1011,6 +1025,37 @@ describe('DELETE /api/channels/:channelId', () => {
     expect((await call('delete', channelPath(VOICE_ID))).status).toBe(204);
     expect(expectOneRoomBroadcast('channel:deleted')).toStrictEqual({ id: VOICE_ID, roomId: ROOM_ID });
     expect(livekit.deleteRoom.mock.calls).toEqual([[`voice_${VOICE_ID}`]]);
+  });
+
+  it("removes each connected participant (no options, so LiveKit's default token revocation applies) before ending the room", async () => {
+    buildWorld('owner');
+    livekit.listParticipants.mockResolvedValue([{ identity: MEMBER_ID }, { identity: 'Not-A-Uuid' }, { identity: MEMBER_ID }]);
+    expect((await call('delete', channelPath(VOICE_ID))).status).toBe(204);
+    expect(livekit.listParticipants.mock.calls).toEqual([[`voice_${VOICE_ID}`]]);
+    // Deduped by identity; exactly two arguments, so LiveKit applies its now + 1 minute revocation leeway.
+    expect(livekit.removeParticipant.mock.calls).toEqual([
+      [`voice_${VOICE_ID}`, MEMBER_ID],
+      [`voice_${VOICE_ID}`, 'Not-A-Uuid'],
+    ]);
+    const lastRemove = Math.max(...livekit.removeParticipant.mock.invocationCallOrder);
+    expect(livekit.deleteRoom.mock.invocationCallOrder[0]).toBeGreaterThan(lastRemove);
+  });
+
+  it('still ends the room when listing its participants fails, logging a warning', async () => {
+    buildWorld('owner');
+    livekit.listParticipants.mockRejectedValue(new ServerError('internal', 'boom', 500, 'internal'));
+    expect((await call('delete', channelPath(VOICE_ID))).status).toBe(204);
+    expect(livekit.removeParticipant).not.toHaveBeenCalled();
+    expect(livekit.deleteRoom).toHaveBeenCalledOnce();
+    expect(logsAt(40, 'could not list LiveKit participants')).toHaveLength(1);
+  });
+
+  it('removes no one from a text channel', async () => {
+    buildWorld('owner');
+    livekit.listParticipants.mockResolvedValue([{ identity: MEMBER_ID }]);
+    expect((await call('delete', channelPath(GENERAL_ID))).status).toBe(204);
+    expect(livekit.listParticipants).not.toHaveBeenCalled();
+    expect(livekit.removeParticipant).not.toHaveBeenCalled();
   });
 
   it('returns 404 for a second delete of the same channel, with no rpc call', async () => {

@@ -63,3 +63,7 @@ export const channelWriteLimiter = limiter(HOUR, 60, byUser);
 /** Shared by leave, remove, change role, transfer ownership, ban, and unban. */
 export const memberWriteLimiter = limiter(HOUR, 30, byUser);
 export const banReadLimiter = limiter(MINUTE, 60, byUser);
+export const voiceTokenLimiter = limiter(MINUTE, 20, byUser);
+export const voiceReadLimiter = limiter(MINUTE, 60, byUser);
+/** Public (LiveKit calls it, signature-verified after this runs), so per IP. */
+export const livekitWebhookLimiter = limiter(MINUTE, 600);

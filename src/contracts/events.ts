@@ -91,7 +91,11 @@ export const serverEvents = {
     'member:joined': z.object({ member: Member }),
     'member:left': z.object({ roomId: Id, userId: Id }),
     'member:role_changed': z.object({ roomId: Id, userId: Id, role: Role }),
-    'voice:participants': z.object({ channelId: Id, participants: z.array(ProfileSummary) }),
+    'voice:participants': z.object({ channelId: Id, participants: z.array(ProfileSummary) }).describe(
+      'The full list of members in one voice channel, in join order: replace the channel’s list, don’t merge. ' +
+        'Best-effort and may arrive out of order; refetch GET /api/rooms/{roomId}/voice/participants when ' +
+        'opening the room and after reconnecting.',
+    ),
     'room:updated': z.object({ room: Room }),
     'room:deleted': z.object({ id: Id }),
   },

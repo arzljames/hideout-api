@@ -11,9 +11,11 @@ import { roomMembersRouter } from './members.js';
 import { channelMessagesRouter, messagesRouter } from './messages.js';
 import { roomsRouter } from './rooms.js';
 import { systemRouter } from './system.js';
+import { channelVoiceRouter, roomVoiceRouter } from './voice.js';
 
 export const apiRouter = Router();
 
+// The LiveKit webhook (public, signature-verified, raw body) is mounted in app.ts, before this router.
 // Public routes (see CLAUDE.md "Security rules" for the full allowlist).
 // mount() uses each router's documented path, so docs and real paths always agree.
 mount(apiRouter, systemRouter);
@@ -30,8 +32,10 @@ mount(apiRouter, roomsRouter);
 mount(apiRouter, roomChannelsRouter);
 mount(apiRouter, roomMembersRouter);
 mount(apiRouter, roomBansRouter);
+mount(apiRouter, roomVoiceRouter);
 mount(apiRouter, channelsRouter);
 mount(apiRouter, channelMessagesRouter);
+mount(apiRouter, channelVoiceRouter);
 mount(apiRouter, messagesRouter);
 mount(apiRouter, roomInvitesRouter);
 mount(apiRouter, invitesRouter);

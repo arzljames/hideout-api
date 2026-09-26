@@ -20,7 +20,8 @@ import { fakeDb, firstArg, queries, resetFakeDb, results, type DbResult, type Re
 
 const logLines = vi.hoisted<string[]>(() => []);
 const livekit = vi.hoisted(() => ({
-  removeParticipant: vi.fn<(room: string, identity: string) => Promise<void>>(),
+  // Typed with the options argument so tests can assert it is never passed.
+  removeParticipant: vi.fn<(room: string, identity: string, options?: { revokeTokenTs?: bigint }) => Promise<void>>(),
   deleteRoom: vi.fn<(name: string) => Promise<void>>(),
 }));
 
@@ -50,6 +51,10 @@ const { newRandomToken, SESSION_COOKIE } = await import('../src/lib/session.js')
 const { Member, RoomDetail } = await import('../src/contracts/http/rooms.js');
 const { ErrorResponse } = await import('../src/contracts/http/common.js');
 const { serverEvents } = await import('../src/contracts/events.js');
+const { voiceRemovalRetry } = await import('../src/services/rooms.js');
+
+// No waiting between LiveKit removal retries here (the real delays are tested in voice.test.ts).
+voiceRemovalRetry.delaysMs = [0, 0];
 
 afterAll(() => {
   vi.unstubAllGlobals();
@@ -452,7 +457,15 @@ function expectValidBroadcasts(sent: SentBroadcast[]): void {
   }
 }
 
+/**
+ * The (room, identity) pairs removed from LiveKit. Every removal passes no options, so LiveKit's
+ * default revocation applies (tokens with nbf before now + 1 minute leeway can't rejoin); our own
+ * revokeTokenTs would be weaker (same-second tokens, clock skew).
+ */
 function removedFromVoice(): [string, string][] {
+  for (const call of livekit.removeParticipant.mock.calls) {
+    expect(call).toHaveLength(2);
+  }
   return livekit.removeParticipant.mock.calls.map(([room, identity]) => [room, identity] as [string, string]).sort();
 }
 
@@ -857,10 +870,12 @@ describe('members: best-effort side effects after leave/remove', () => {
   it.each([
     ['a LiveKit server error', () => new ServerError('internal', 'boom', 500, 'internal')],
     ['LiveKit being unreachable', () => new Error('fetch failed')],
-  ])('still returns 204 on %s, logging a warning per channel and still broadcasting', async (_l, makeError) => {
+  ])('still returns 204 on %s, retrying, logging a warning per channel and still broadcasting', async (_l, makeError) => {
     buildWorld('member');
     livekit.removeParticipant.mockRejectedValue(makeError());
     expect((await call('delete', leavePath())).status).toBe(204);
+    // 3 attempts for each of the 2 voice channels.
+    expect(livekit.removeParticipant).toHaveBeenCalledTimes(6);
     expect(logsAt(40, 'could not remove participant from LiveKit room')).toHaveLength(2);
     expect(sentBroadcasts().map((b) => b.event)).toEqual(['member:left']);
   });
@@ -871,7 +886,10 @@ describe('members: best-effort side effects after leave/remove', () => {
       room === `voice_${VOICE_ID}` ? Promise.reject(new Error('fetch failed')) : Promise.resolve(),
     );
     expect((await call('delete', leavePath())).status).toBe(204);
-    expect(removedFromVoice()).toEqual(voiceRemovalsFor(world.me));
+    // The failing channel is tried 3 times, the other once.
+    const calls = removedFromVoice();
+    expect(calls.filter(([room]) => room === `voice_${VOICE_ID}`)).toHaveLength(3);
+    expect([...new Map(calls.map((c) => [c.join(), c])).values()]).toEqual(voiceRemovalsFor(world.me));
     expect(logsAt(40, 'could not remove participant')).toHaveLength(1);
   });
 

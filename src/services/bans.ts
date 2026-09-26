@@ -1,11 +1,11 @@
 import { z } from 'zod';
 import { Ban, STEAM_ID_PATTERN, type BanPage, type ListBansQuery } from '../contracts/http/bans.js';
-import { ProfileSummary } from '../contracts/http/rooms.js';
 import { db } from '../db/client.js';
 import { dbFailure, rpcFailure, type DbError } from '../db/errors.js';
 import { ConflictError, InternalError, type AppError, NotFoundError, ValidationError } from '../errors.js';
 import { logger } from '../lib/logger.js';
 import { announceMembershipEnded } from './members.js';
+import { PROFILE_COLUMNS, ProfileRow, toProfileSummary } from './profiles.js';
 import { parseRevokedInvites } from './revokedInvites.js';
 import { listVoiceChannelIds } from './rooms.js';
 
@@ -22,10 +22,6 @@ import { listVoiceChannelIds } from './rooms.js';
 // Row mapping
 // ---------------------------------------------------------------------------
 
-const ProfileRow = z.object({ id: z.guid(), display_name: z.string(), avatar_url: z.string().nullable() });
-type ProfileRow = z.infer<typeof ProfileRow>;
-const PROFILE_COLUMNS = 'id, display_name, avatar_url';
-
 const SteamProfileRow = ProfileRow.extend({ steam_id: z.string() });
 
 /**
@@ -41,12 +37,6 @@ const BanRow = z.object({
 });
 type BanRow = z.infer<typeof BanRow>;
 const BAN_COLUMNS = `steam_id, reason, created_at, profiles!room_bans_banned_by_fkey(${PROFILE_COLUMNS})`;
-
-function toProfileSummary(profile: ProfileRow): z.infer<typeof ProfileSummary> {
-  // A stored avatar that isn't a valid https URL is dropped rather than failing the request.
-  const avatar = ProfileSummary.shape.avatarUrl.safeParse(profile.avatar_url);
-  return { id: profile.id.toLowerCase(), displayName: profile.display_name, avatarUrl: avatar.success ? avatar.data : null };
-}
 
 /** Validates a response against its contract schema; a mismatch is a server bug (values never logged). */
 function checked<T extends z.ZodType>(operation: string, schema: T, value: unknown): z.infer<T> {

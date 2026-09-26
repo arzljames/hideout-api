@@ -25,7 +25,12 @@ import {
  */
 
 const logLines = vi.hoisted<string[]>(() => []);
-const livekit = vi.hoisted(() => ({ deleteRoom: vi.fn<(name: string) => Promise<void>>() }));
+const livekit = vi.hoisted(() => ({
+  deleteRoom: vi.fn<(name: string) => Promise<void>>(),
+  listParticipants: vi.fn<(room: string) => Promise<{ identity: string }[]>>(),
+  // Typed with the options argument so tests can assert it is never passed.
+  removeParticipant: vi.fn<(room: string, identity: string, options?: { revokeTokenTs?: bigint }) => Promise<void>>(),
+}));
 
 vi.mock('pino', async (importOriginal) => {
   const actual = await importOriginal<typeof PinoModule>();
@@ -39,7 +44,11 @@ vi.mock('pino', async (importOriginal) => {
 vi.mock('../src/db/client.js', async () => ({ db: (await import('./helpers/fakeDb.js')).fakeDb }));
 vi.mock('../src/lib/livekit.js', async (importOriginal) => ({
   ...(await importOriginal<typeof LivekitModule>()),
-  livekitRooms: { deleteRoom: livekit.deleteRoom },
+  livekitRooms: {
+    deleteRoom: livekit.deleteRoom,
+    listParticipants: livekit.listParticipants,
+    removeParticipant: livekit.removeParticipant,
+  },
 }));
 
 const fetchMock = vi.fn<typeof fetch>();
@@ -365,6 +374,11 @@ beforeEach(() => {
   fetchMock.mockImplementation(() => Promise.resolve(new Response(null, { status: 202 })));
   livekit.deleteRoom.mockReset();
   livekit.deleteRoom.mockResolvedValue(undefined);
+  // Nobody joined by default: LiveKit reports the room not found.
+  livekit.listParticipants.mockReset();
+  livekit.listParticipants.mockRejectedValue(new ServerError('not_found', 'no room', 404, 'not_found'));
+  livekit.removeParticipant.mockReset();
+  livekit.removeParticipant.mockResolvedValue(undefined);
   // A fresh user per test also isolates the per-user rate limiters, whose state is module-level.
   world = { me: randomUUID(), token: newRandomToken(), rooms: [], channels: [], members: [], myRooms: [] };
   install();
@@ -1256,6 +1270,27 @@ describe('DELETE /api/rooms/:roomId: broadcasts and LiveKit', () => {
 
     expect(livekit.deleteRoom.mock.calls.map(([name]) => name).sort()).toEqual(
       [`voice_${VOICE_ID}`, `voice_${VOICE2_ID}`].sort(),
+    );
+  });
+
+  it('removes everyone connected to each voice channel (no options) before ending its LiveKit room', async () => {
+    deleteWorld();
+    livekit.listParticipants.mockImplementation((room) =>
+      room === `voice_${VOICE_ID}`
+        ? Promise.resolve([{ identity: MEMBER_ID }, { identity: ADMIN_ID }])
+        : Promise.reject(new ServerError('not_found', 'no room', 404, 'not_found')),
+    );
+    expect((await call('delete', `/api/rooms/${ROOM_ID}`)).status).toBe(204);
+    expect(livekit.listParticipants.mock.calls.map(([room]) => room).sort()).toEqual(
+      [`voice_${VOICE_ID}`, `voice_${VOICE2_ID}`].sort(),
+    );
+    expect(livekit.removeParticipant.mock.calls).toEqual([
+      [`voice_${VOICE_ID}`, MEMBER_ID],
+      [`voice_${VOICE_ID}`, ADMIN_ID],
+    ]);
+    const endVoice = livekit.deleteRoom.mock.calls.findIndex(([name]) => name === `voice_${VOICE_ID}`);
+    expect(livekit.deleteRoom.mock.invocationCallOrder[endVoice]).toBeGreaterThan(
+      Math.max(...livekit.removeParticipant.mock.invocationCallOrder),
     );
   });
 

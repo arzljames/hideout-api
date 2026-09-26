@@ -19,7 +19,6 @@ import {
   type InviteStatus,
   type ListInvitesQuery,
 } from '../contracts/http/invites.js';
-import { ProfileSummary } from '../contracts/http/rooms.js';
 import { Role as RoleSchema } from '../contracts/events.js';
 import { db } from '../db/client.js';
 import { dbFailure, rpcFailure } from '../db/errors.js';
@@ -27,6 +26,7 @@ import { ConflictError, ForbiddenError, GoneError, InternalError, NotFoundError,
 import { logger } from '../lib/logger.js';
 import { newRandomToken } from '../lib/session.js';
 import { broadcastToRoom, broadcastToUser } from '../realtime/broadcast.js';
+import { PROFILE_COLUMNS, ProfileRow, toProfileSummary } from './profiles.js';
 import { findMember, findMembership, getRoomDetail, roleAtLeast, ROOM_COLUMNS, toRooms, type Role } from './rooms.js';
 
 /*
@@ -78,10 +78,6 @@ const DirectInviteRpcRow = RpcInviteRow.extend({ replaced_invite_id: z.guid().nu
 const INVITE_COLUMNS =
   'id, room_id, created_by, kind, invitee_steam_id, max_uses, uses, expires_at, revoked_at, accepted_at, declined_at, created_at';
 
-const ProfileRow = z.object({ id: z.guid(), display_name: z.string(), avatar_url: z.string().nullable() });
-type ProfileRow = z.infer<typeof ProfileRow>;
-const PROFILE_COLUMNS = 'id, display_name, avatar_url';
-
 const RoomRow = z.object({
   id: z.guid(),
   name: z.string(),
@@ -89,12 +85,6 @@ const RoomRow = z.object({
   icon_path: z.string().nullable(),
   created_at: z.string(),
 });
-
-function toProfileSummary(profile: ProfileRow): z.infer<typeof ProfileSummary> {
-  // A stored avatar that isn't a valid https URL is dropped rather than failing the request.
-  const avatar = ProfileSummary.shape.avatarUrl.safeParse(profile.avatar_url);
-  return { id: profile.id.toLowerCase(), displayName: profile.display_name, avatarUrl: avatar.success ? avatar.data : null };
-}
 
 /** The public preview names the inviter without their profile id. */
 function toInviter(profile: ProfileRow): z.infer<typeof InvitePreviewInviter> {

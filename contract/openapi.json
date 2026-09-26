@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, USER_BANNED, BANNED, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, OWNER_PROTECTED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, INVALID_SIGNATURE, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, CHANNEL_NOT_VOICE, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, USER_BANNED, BANNED, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, OWNER_PROTECTED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, SERVICE_UNAVAILABLE, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -1223,6 +1223,75 @@
         "required": [
           "data",
           "nextCursor"
+        ]
+      },
+      "VoiceToken": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 1,
+            "description": "LiveKit access token for `room.connect(url, token)`."
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "LiveKit server URL (`wss://...`).",
+            "example": "wss://hideout.livekit.cloud"
+          },
+          "roomName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The LiveKit room the token joins (`voice_<channelId>`). Informational; the token already names it.",
+            "example": "voice_6f1c2a4e-8b1d-4c3a-9e2f-0a1b2c3d4e5f"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-09-25T10:01:00.000Z",
+            "description": "When the token stops being usable to join (60 seconds after issue). Fetch a token right before connecting, never ahead of time. Once connected, LiveKit refreshes it automatically; after a disconnect, fetch a new one to rejoin."
+          }
+        },
+        "required": [
+          "token",
+          "url",
+          "roomName",
+          "expiresAt"
+        ]
+      },
+      "VoiceChannelParticipants": {
+        "type": "object",
+        "properties": {
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "participants": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileSummary"
+            },
+            "description": "Room members currently in the voice channel, in the order they joined."
+          }
+        },
+        "required": [
+          "channelId",
+          "participants"
+        ]
+      },
+      "VoiceParticipantList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VoiceChannelParticipants"
+            },
+            "description": "One entry per live voice channel of the room (empty channels included), by channel position."
+          }
+        },
+        "required": [
+          "data"
         ]
       }
     },
@@ -4312,6 +4381,273 @@
           },
           "500": {
             "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/voice/token": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Get a voice token",
+        "description": "Any member of the channel’s room. Returns a LiveKit token (identity = your profile id) that can join this voice channel for 60 seconds; connect immediately. It allows publishing your microphone only (no camera, screen share, or data messages). When you are removed from the room, banned, or the channel or room is deleted, you are disconnected and tokens issued before then stop working (so a member who leaves and is re-invited may need to wait about a minute to rejoin that voice channel). No request body: send `Content-Type: application/json` (the CSRF check requires it) with an empty body or `{}`; any body is ignored, but it must be valid JSON if present. Sent with `Cache-Control: no-store`. Rate limited to 20/minute per user (counted before the membership check). Non-members get 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel id."
+            },
+            "required": true,
+            "description": "Channel id.",
+            "name": "channelId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A LiveKit join token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceToken"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`INVALID_JSON`: a body was sent and it is not valid JSON.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found or deleted, its room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_NOT_VOICE`: the channel is a text channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/voice/participants": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Who is in each voice channel",
+        "description": "Any member. The current participants of every live voice channel in the room, read from LiveKit. Load it when opening a room and after reconnecting to Realtime; afterwards `voice:participants` on `room:<roomId>` carries the full list for one channel whenever it changes (replace, don’t merge). A channel whose participants LiveKit can’t list right now is returned with an empty list. Rate limited to 60/minute per user (counted before the membership check). Non-members get 404.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Participants per voice channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceParticipantList"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/livekit/webhook": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "LiveKit webhook (server to server)",
+        "description": "Called by LiveKit, not by browsers. Configure `API_URL/api/livekit/webhook` as the webhook URL in LiveKit Cloud. The body is a LiveKit `WebhookEvent` sent as `application/webhook+json`, signed by the JWT in the `Authorization` header (checked against the raw body with the LiveKit API secret). Unsigned or tampered requests get 401 and change nothing. A verified event gets 200, even one that is ignored or fails internally (failures are logged), so LiveKit doesn’t retry it; the exception is a `participant_joined` whose membership can’t be checked (database unavailable), which gets 503 so LiveKit retries it. `participant_joined`, `participant_left`, `participant_connection_aborted`, and `room_finished` on `voice_<channelId>` rooms broadcast `voice:participants`. A participant who joins without being a member of the channel’s room (or joins a non-canonical `voice_` room) is removed from LiveKit, and every participant list read removes connected non-members. Rate limited to 600/minute per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "description": "A LiveKit webhook event (see https://docs.livekit.io/home/server/webhooks/).",
+          "content": {
+            "application/webhook+json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "event"
+                ],
+                "additionalProperties": {},
+                "description": "LiveKit `WebhookEvent` (protobuf JSON). Only the fields Hideout reads are listed."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verified and acknowledged (handled or deliberately ignored)."
+          },
+          "401": {
+            "description": "`INVALID_SIGNATURE`: missing or invalid `Authorization` signature, a body that doesn’t match it, or a Content-Type other than `application/webhook+json`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "`PAYLOAD_TOO_LARGE`: the body is over 100 kB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`SERVICE_UNAVAILABLE`: a `participant_joined` could not be checked against room membership; LiveKit retries.",
             "content": {
               "application/json": {
                 "schema": {
