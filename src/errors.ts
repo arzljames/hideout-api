@@ -6,6 +6,7 @@ export const errorCodes = [
   'BAD_REQUEST',
   'INVALID_JSON',
   'UNAUTHENTICATED',
+  'INVALID_SIGNATURE',
   'FORBIDDEN',
   'ORIGIN_NOT_ALLOWED',
   'UNSUPPORTED_CONTENT_TYPE',
@@ -16,6 +17,7 @@ export const errorCodes = [
   'LAST_TEXT_CHANNEL',
   'CHANNEL_ORDER_STALE',
   'CHANNEL_NOT_TEXT',
+  'CHANNEL_NOT_VOICE',
   'IDEMPOTENCY_KEY_REUSED',
   'ALREADY_MEMBER',
   'INVITE_ALREADY_PENDING',
@@ -29,6 +31,7 @@ export const errorCodes = [
   'PAYLOAD_TOO_LARGE',
   'VALIDATION_FAILED',
   'RATE_LIMITED',
+  'SERVICE_UNAVAILABLE',
   'INTERNAL',
 ] as const;
 
@@ -104,6 +107,17 @@ export class ValidationError extends AppError {
 export class RateLimitedError extends AppError {
   constructor(message = 'Too many requests. Try again shortly.') {
     super(429, 'RATE_LIMITED', message);
+  }
+}
+
+/**
+ * A dependency failed in a way the caller should retry (e.g. the LiveKit webhook, where LiveKit
+ * retries non-2xx responses). `cause` is logged by errorHandler and never sent to the client.
+ */
+export class ServiceUnavailableError extends AppError {
+  constructor(cause?: unknown) {
+    super(503, 'SERVICE_UNAVAILABLE', 'Temporarily unavailable. Try again shortly.');
+    this.cause = cause;
   }
 }
 

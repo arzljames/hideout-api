@@ -23,7 +23,8 @@ import { fakeDb, firstArg, queries, resetFakeDb, results, type DbResult, type Re
 
 const logLines = vi.hoisted<string[]>(() => []);
 const livekit = vi.hoisted(() => ({
-  removeParticipant: vi.fn<(room: string, identity: string) => Promise<void>>(),
+  // Typed with the options argument so tests can assert it is never passed.
+  removeParticipant: vi.fn<(room: string, identity: string, options?: { revokeTokenTs?: bigint }) => Promise<void>>(),
   deleteRoom: vi.fn<(name: string) => Promise<void>>(),
 }));
 
@@ -54,6 +55,10 @@ const { Ban, BanPage } = await import('../src/contracts/http/bans.js');
 const { AcceptInviteResult, CreatedInvite, RedeemInviteResult } = await import('../src/contracts/http/invites.js');
 const { ErrorResponse } = await import('../src/contracts/http/common.js');
 const { serverEvents } = await import('../src/contracts/events.js');
+const { voiceRemovalRetry } = await import('../src/services/rooms.js');
+
+// No waiting between LiveKit removal retries here (the real delays are tested in voice.test.ts).
+voiceRemovalRetry.delaysMs = [0, 0];
 
 afterAll(() => {
   vi.unstubAllGlobals();
@@ -775,7 +780,15 @@ function inviteRevokedBroadcasts(): [string, unknown][] {
   );
 }
 
+/**
+ * The (room, identity) pairs removed from LiveKit. Every removal passes no options, so LiveKit's
+ * default revocation applies (tokens with nbf before now + 1 minute leeway can't rejoin); our own
+ * revokeTokenTs would be weaker (same-second tokens, clock skew).
+ */
 function removedFromVoice(): [string, string][] {
+  for (const call of livekit.removeParticipant.mock.calls) {
+    expect(call).toHaveLength(2);
+  }
   return livekit.removeParticipant.mock.calls.map(([room, identity]) => [room, identity] as [string, string]).sort();
 }
 
@@ -1241,14 +1254,15 @@ describe('bans: side effects of a ban', () => {
   });
 
   it.each([
-    ['a LiveKit server error', () => new ServerError('internal', 'boom', 500, 'internal')],
-    ['LiveKit being unreachable', () => new Error('fetch failed')],
-    ['the participant not being there', () => new ServerError('not_found', 'participant not found', 404, 'not_found')],
-  ])('still returns 201 and broadcasts on %s', async (_l, makeError) => {
+    // Failures are retried (3 attempts per voice channel); not_found stops at once.
+    ['a LiveKit server error', () => new ServerError('internal', 'boom', 500, 'internal'), 6],
+    ['LiveKit being unreachable', () => new Error('fetch failed'), 6],
+    ['the participant not being there', () => new ServerError('not_found', 'participant not found', 404, 'not_found'), 2],
+  ])('still returns 201 and broadcasts on %s', async (_l, makeError, calls) => {
     livekit.removeParticipant.mockRejectedValue(makeError());
     const res = await call('post', bansPath(), { body: { userId: ids.member } });
     expect(res.status).toBe(201);
-    expect(livekit.removeParticipant).toHaveBeenCalledTimes(2);
+    expect(livekit.removeParticipant).toHaveBeenCalledTimes(calls);
     expect(sentBroadcasts().map((b) => b.event).sort()).toEqual(['member:left', 'member:removed']);
   });
 

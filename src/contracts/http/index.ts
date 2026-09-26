@@ -8,5 +8,6 @@ import './messages.js';
 import './invites.js';
 import './members.js';
 import './bans.js';
+import './voice.js';
 
 export { registry } from './registry.js';

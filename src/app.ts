@@ -8,6 +8,7 @@ import { corsMiddleware } from './middleware/cors.js';
 import { requireSameOrigin } from './middleware/csrf.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/index.js';
+import { livekitWebhookRouter } from './routes/livekitWebhook.js';
 
 export function createApp(): express.Express {
   const app = express();
@@ -26,7 +27,8 @@ export function createApp(): express.Express {
   app.use(corsMiddleware);
 
   // Server-to-server routes that need the raw body and no Origin check (LiveKit webhook) mount here,
-  // before the JSON parser and requireSameOrigin.
+  // before the JSON parser and requireSameOrigin. The webhook authenticates by its signature.
+  app.use(livekitWebhookRouter.mountPath, livekitWebhookRouter.router);
 
   app.use(express.json({ limit: '100kb' }));
   app.use(cookieParser());

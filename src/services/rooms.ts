@@ -358,12 +358,23 @@ async function notifyRemovedMembers(roomId: string): Promise<void> {
 }
 
 /**
- * Removes everyone from a (deleted) voice channel's LiveKit room. A room that doesn't exist
- * (nobody joined) is the common case. Never throws: the delete has already committed.
+ * Removes everyone from a (deleted) voice channel's LiveKit room, then deletes the room. Each
+ * participant is removed individually first, because removeParticipant (with LiveKit's default
+ * revocation, see removeFromVoice) also revokes their earlier tokens, which deleteRoom doesn't.
+ * A room that doesn't exist (nobody joined) is the common case. Never throws: the delete has
+ * already committed.
  */
 export async function endVoiceRoom(channelId: string): Promise<void> {
+  const roomName = voiceRoomName(channelId);
   try {
-    await livekitRooms.deleteRoom(voiceRoomName(channelId));
+    const participants = await livekitRooms.listParticipants(roomName);
+    const identities = [...new Set(participants.map((p) => p.identity))];
+    await Promise.allSettled(identities.map((identity) => removeWithRetry(roomName, identity, channelId)));
+  } catch (err) {
+    if (!isLivekitNotFound(err)) logger.warn({ err, channelId }, 'could not list LiveKit participants of deleted voice channel');
+  }
+  try {
+    await livekitRooms.deleteRoom(roomName);
   } catch (err) {
     if (isLivekitNotFound(err)) logger.debug({ channelId }, 'no LiveKit room to end for deleted voice channel');
     else logger.warn({ err, channelId }, 'could not end LiveKit room for deleted voice channel');
@@ -371,19 +382,49 @@ export async function endVoiceRoom(channelId: string): Promise<void> {
 }
 
 /**
+ * Waits before the 2nd and 3rd removeParticipant attempt. Mutable only so tests can shorten it.
+ */
+export const voiceRemovalRetry = { delaysMs: [200, 800] as readonly number[] };
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * removeParticipant with no options, so LiveKit applies its default revocation: tokens whose
+ * `nbf` is before now + 1 minute (LiveKit's leeway) can't rejoin. Accepted consequence: someone
+ * who leaves and is re-invited can't rejoin that voice channel for up to about a minute.
+ * Retries other failures (3 attempts in total); not_found (not in the room, or no room) stops at
+ * once. Never throws: callers run it after their write has committed.
+ */
+export async function removeWithRetry(roomName: string, identity: string, channelId: string): Promise<void> {
+  const delays = voiceRemovalRetry.delaysMs;
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await livekitRooms.removeParticipant(roomName, identity);
+      return;
+    } catch (err) {
+      if (isLivekitNotFound(err)) {
+        logger.debug({ channelId }, 'not in LiveKit room; nothing to remove');
+        return;
+      }
+      const delay = delays[attempt];
+      if (delay === undefined) {
+        logger.warn({ err, channelId, attempts: attempt + 1 }, 'could not remove participant from LiveKit room');
+        return;
+      }
+      await sleep(delay);
+    }
+  }
+}
+
+/**
  * Disconnects one person from each of the given voice channels' LiveKit rooms (rule 9: removal
- * and leaving revoke voice too). Not being in a room, or the room not existing, is the common
- * case. Never throws: the membership change has already committed.
+ * and leaving revoke voice too), revoking their earlier voice tokens (see removeWithRetry). Not
+ * being in a room, or the room not existing, is the common case. If LiveKit stays unreachable,
+ * the webhook and every participant list read kick connected non-members as a backstop. Never
+ * throws: the membership change has already committed.
  */
 export async function removeFromVoice(channelIds: readonly string[], identity: string): Promise<void> {
   await Promise.allSettled(
-    channelIds.map(async (channelId) => {
-      try {
-        await livekitRooms.removeParticipant(voiceRoomName(channelId), identity);
-      } catch (err) {
-        if (isLivekitNotFound(err)) logger.debug({ channelId }, 'not in LiveKit room; nothing to remove');
-        else logger.warn({ err, channelId }, 'could not remove participant from LiveKit room');
-      }
-    }),
+    channelIds.map((channelId) => removeWithRetry(voiceRoomName(channelId), identity, channelId)),
   );
 }
