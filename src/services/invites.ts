@@ -169,6 +169,11 @@ function invalidInvite(): NotFoundError {
   return new NotFoundError('This invite is invalid or no longer usable.');
 }
 
+/** The caller's Steam account is banned from the invite's room (redeem or accept). */
+function banned(): ForbiddenError {
+  return new ForbiddenError("You're banned from this room.", 'BANNED');
+}
+
 function alreadyResponded(): ConflictError {
   return new ConflictError('You already responded to this invite.', 'INVITE_ALREADY_RESPONDED');
 }
@@ -458,7 +463,7 @@ async function announceJoin(roomId: string, profileId: string): Promise<void> {
 
 const RedeemRow = z.object({
   room_id: z.guid().nullable(),
-  status: z.enum(['invalid', 'room_deleted', 'already_member', 'revoked', 'expired', 'used_up', 'joined']),
+  status: z.enum(['invalid', 'room_deleted', 'banned', 'already_member', 'revoked', 'expired', 'used_up', 'joined']),
 });
 
 /** Joins a room with a link token. Idempotent: a second redeem returns already_member without using up the link. */
@@ -475,6 +480,8 @@ export async function redeemInvite(token: string, profileId: string): Promise<Re
     case 'invalid':
     case 'room_deleted':
       throw invalidInvite();
+    case 'banned':
+      throw banned();
     case 'revoked':
       throw new GoneError('This invite was revoked.', 'INVITE_REVOKED');
     case 'expired':
@@ -547,6 +554,7 @@ const RespondRow = z.object({
     'invalid',
     'room_deleted',
     'already_responded',
+    'banned',
     'revoked',
     'expired',
     'accepted',
@@ -575,6 +583,9 @@ async function respond(
     case 'invalid':
     case 'room_deleted':
       throw new NotFoundError();
+    case 'banned':
+      // Only an accept can be refused for a ban; a decline still goes through.
+      throw banned();
     case 'revoked':
       throw new GoneError('This invite was revoked.', 'INVITE_REVOKED');
     case 'expired':

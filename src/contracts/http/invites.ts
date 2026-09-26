@@ -231,7 +231,8 @@ registry.registerPath({
     404: roomNotFound,
     409: errorResponse(
       '`ALREADY_MEMBER`: that Steam account is already in the room. `INVITE_ALREADY_PENDING`: an unexpired ' +
-        'direct invite to that Steam account is pending; revoke it first.',
+        'direct invite to that Steam account is pending; revoke it first. `USER_BANNED`: that Steam account is ' +
+        'banned from the room; lift the ban first.',
     ),
     422: errorResponse('Invalid body (kind, expiresIn, maxUses, or steamId).'),
     500: serverError,
@@ -306,14 +307,15 @@ registry.registerPath({
   description:
     'Joins the invite’s room as a member and returns the room. Idempotent by design: redeeming again (or a ' +
     'retry) returns `already_member` without using up the invite. On join, broadcasts `member:joined` on ' +
-    '`room:<roomId>`. 410 codes: `INVITE_REVOKED`, `INVITE_EXPIRED`, `INVITE_USED_UP`.' +
+    '`room:<roomId>`. 410 codes: `INVITE_REVOKED`, `INVITE_EXPIRED`, `INVITE_USED_UP`. A caller banned from the ' +
+    'room gets 403 `BANNED`.' +
     respondLimitNote +
     writeNote,
   request: { params: InviteTokenParams },
   responses: {
     200: { description: 'Joined (or already a member).', content: json(RedeemInviteResult) },
     ...authedErrors,
-    403: errorResponse(csrf),
+    403: errorResponse(`${csrf} Or \`BANNED\`: you are banned from this room.`),
     404: errorResponse('Malformed or unknown token, or the room was deleted.'),
     410: errorResponse('`INVITE_REVOKED`, `INVITE_EXPIRED`, or `INVITE_USED_UP`.'),
     500: serverError,
@@ -343,14 +345,15 @@ registry.registerPath({
   summary: 'Accept a direct invite',
   description:
     'Joins the room and returns it. Idempotent: retrying an accept that succeeded returns `already_member`. On ' +
-    'join, broadcasts `member:joined` on `room:<roomId>`. Invites addressed to someone else are 404.' +
+    'join, broadcasts `member:joined` on `room:<roomId>`. Invites addressed to someone else are 404. A caller ' +
+    'banned from the room gets 403 `BANNED`; declining still works.' +
     respondLimitNote +
     writeNote,
   request: { params: InviteIdParams },
   responses: {
     200: { description: 'Accepted (or already a member).', content: json(AcceptInviteResult) },
     ...authedErrors,
-    403: errorResponse(csrf),
+    403: errorResponse(`${csrf} Or \`BANNED\`: you are banned from this room.`),
     404: errorResponse('Invite not found, not addressed to you, or its room was deleted.'),
     409: errorResponse('`INVITE_ALREADY_RESPONDED`: the invite was already declined, or accepted and you are no longer a member.'),
     410: errorResponse('`INVITE_REVOKED` or `INVITE_EXPIRED`.'),

@@ -23,8 +23,9 @@ export function dbFailure(operation: string, error: DbError): InternalError {
  * Maps an error raised by a room/channel/invite Postgres function to an AppError, using the
  * SQLSTATE table in supabase/migrations/20260925010655_core_schema_fixes.sql (HX001–HX005,
  * including HX005 → 409 OWNER_PROTECTED); HX006–HX008 come from the channels migration,
- * HX009–HX010 from the messages migration, and HX011–HX012 from the invites migration. The DB
- * message and details are never echoed to the client (they can carry row values).
+ * HX009–HX010 from the messages migration, HX011–HX012 from the invites migration, and HX013
+ * from the bans migration. The DB message and details are never echoed to the client (they can
+ * carry row values).
  *
  * @param options.field request field blamed for 22023/23514/HX004 failures (default `body`).
  * @param options.uniqueViolation returned for 23505 when the caller knows which unique
@@ -67,6 +68,8 @@ export function rpcFailure(
         'That person already has a pending invite to this room. Revoke it to send a new one.',
         'INVITE_ALREADY_PENDING',
       );
+    case 'HX013': // user_banned (direct invite to a banned SteamID)
+      return new ConflictError('That person is banned from this room.', 'USER_BANNED');
     case '23505':
       return uniqueViolation ?? dbFailure(operation, error);
     case 'HX004': // same_user

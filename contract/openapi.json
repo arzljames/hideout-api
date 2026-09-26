@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, OWNER_PROTECTED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, USER_BANNED, BANNED, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, OWNER_PROTECTED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -1132,6 +1132,98 @@
           "userId"
         ],
         "additionalProperties": false
+      },
+      "BanBody": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Profile id of the member to ban."
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Optional note for the room's owner and admins, 1–200 characters after trimming. Control characters (Unicode Cc, including line breaks) are rejected. Omit it rather than sending an empty string. Never shown to the banned person."
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
+      },
+      "Ban": {
+        "type": "object",
+        "properties": {
+          "steamId": {
+            "type": "string",
+            "pattern": "^7656119[0-9]{10}$",
+            "description": "SteamID64: 17 digits starting with `7656119`.",
+            "example": "76561197960287930"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The banned Steam account’s profile; null once it was deleted."
+          },
+          "bannedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Who issued the ban; null once their profile was deleted."
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "steamId",
+          "user",
+          "bannedBy",
+          "reason",
+          "createdAt"
+        ],
+        "description": "A Steam account banned from a room. Permanent until an owner or admin lifts it."
+      },
+      "BanPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Ban"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
       }
     },
     "parameters": {}
@@ -1846,7 +1938,7 @@
           "rooms"
         ],
         "summary": "Delete a room",
-        "description": "Owner only. Soft-deletes the room and its channels, ends its voice sessions, broadcasts `room:deleted` on `room:<roomId>` and `member:removed` on each member’s `user:<profileId>`. Non-members get 404. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "description": "Owner only. Soft-deletes the room and its channels, ends its voice sessions, broadcasts `room:deleted` on `room:<roomId>` and `member:removed` on each member’s `user:<profileId>`, revokes the room’s pending invites, and sends `invite:revoked` on the `user:<profileId>` of each signed-in invitee of a pending direct invite it revoked. Non-members get 404. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
         "parameters": [
           {
             "schema": {
@@ -2859,7 +2951,7 @@
             }
           },
           "409": {
-            "description": "`ALREADY_MEMBER`: that Steam account is already in the room. `INVITE_ALREADY_PENDING`: an unexpired direct invite to that Steam account is pending; revoke it first.",
+            "description": "`ALREADY_MEMBER`: that Steam account is already in the room. `INVITE_ALREADY_PENDING`: an unexpired direct invite to that Steam account is pending; revoke it first. `USER_BANNED`: that Steam account is banned from the room; lift the ban first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3170,7 +3262,7 @@
           "invites"
         ],
         "summary": "Join a room with a link invite",
-        "description": "Joins the invite’s room as a member and returns the room. Idempotent by design: redeeming again (or a retry) returns `already_member` without using up the invite. On join, broadcasts `member:joined` on `room:<roomId>`. 410 codes: `INVITE_REVOKED`, `INVITE_EXPIRED`, `INVITE_USED_UP`. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "description": "Joins the invite’s room as a member and returns the room. Idempotent by design: redeeming again (or a retry) returns `already_member` without using up the invite. On join, broadcasts `member:joined` on `room:<roomId>`. 410 codes: `INVITE_REVOKED`, `INVITE_EXPIRED`, `INVITE_USED_UP`. A caller banned from the room gets 403 `BANNED`. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
         "parameters": [
           {
             "schema": {
@@ -3206,7 +3298,7 @@
             }
           },
           "403": {
-            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or `BANNED`: you are banned from this room.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3315,7 +3407,7 @@
           "invites"
         ],
         "summary": "Accept a direct invite",
-        "description": "Joins the room and returns it. Idempotent: retrying an accept that succeeded returns `already_member`. On join, broadcasts `member:joined` on `room:<roomId>`. Invites addressed to someone else are 404. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "description": "Joins the room and returns it. Idempotent: retrying an accept that succeeded returns `already_member`. On join, broadcasts `member:joined` on `room:<roomId>`. Invites addressed to someone else are 404. A caller banned from the room gets 403 `BANNED`; declining still works. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
         "parameters": [
           {
             "schema": {
@@ -3351,7 +3443,7 @@
             }
           },
           "403": {
-            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or `BANNED`: you are banned from this room.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3881,6 +3973,325 @@
           },
           "422": {
             "description": "Invalid body, or `userId` is the caller’s own id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/bans": {
+      "post": {
+        "tags": [
+          "bans"
+        ],
+        "summary": "Ban a member",
+        "description": "Owner or admin: removes a member and bans their Steam account from the room until the ban is lifted. The owner bans anyone except themself; an admin bans plain members only. Same effects as removing the member (`member:left` on `room:<roomId>`, disconnect from the room’s voice channels, their pending invites in the room revoked, as are pending direct invites addressed to them, with `invite:revoked` to each signed-in invitee), and `member:removed` on the banned member’s `user:<profileId>` carries `banned: true`. While banned, the account can’t join with a link (403 `BANNED`), accept a direct invite (403 `BANNED`), or be sent one (409 `USER_BANNED`). Not idempotent: the target must still be a member. Non-members get 404. If the server can’t read the stored ban back after writing it, it still answers 201, with `createdAt` from the API’s clock (approximate) and `bannedBy` possibly null; the ban list has the stored values. Ban and unban share the membership-write rate limit (with leave, remove, change role, and transfer ownership): 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BanBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The ban.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ban"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required). Or an admin tried to ban an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404); or `userId` is not a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_PROTECTED`: the room owner can't be banned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body (`userId` or `reason`), or `userId` is the caller’s own id (at `body.userId`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "bans"
+        ],
+        "summary": "List a room’s bans",
+        "description": "Owner or admin: every active ban in the room, newest first, cursor-paginated: pass `nextCursor` back as `cursor` until it is null. Non-members get 404. Sent with `Cache-Control: no-store`. Rate limited to 60/minute per user.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Opaque `nextCursor` from the previous page."
+            },
+            "required": false,
+            "description": "Opaque `nextCursor` from the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "description": "Page size, 1–100 (default 50)."
+            },
+            "required": false,
+            "description": "Page size, 1–100 (default 50).",
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of bans.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BanPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor or limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/bans/{steamId}": {
+      "delete": {
+        "tags": [
+          "bans"
+        ],
+        "summary": "Lift a ban",
+        "description": "Owner or admin. The owner or any admin can lift any ban, whoever issued it (including a ban the owner issued, or one on an admin the owner banned); this is deliberate. The account can then be invited again; it does not rejoin automatically. No broadcast. Non-members get 404. Ban and unban share the membership-write rate limit (with leave, remove, change role, and transfer ownership): 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^7656119\\d{10}$",
+              "description": "SteamID64 of the banned account. A malformed SteamID is a 404, like one that isn’t banned.",
+              "example": "76561197960287930"
+            },
+            "required": true,
+            "description": "SteamID64 of the banned account. A malformed SteamID is a 404, like one that isn’t banned.",
+            "name": "steamId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Ban lifted."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member (owner or admin required).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404); or that SteamID is not banned (or is malformed).",
             "content": {
               "application/json": {
                 "schema": {

@@ -4,8 +4,9 @@ import { ConflictError, ForbiddenError, InternalError, NotFoundError, Validation
 
 /*
  * rpcFailure maps the SQLSTATEs raised by the room/invite Postgres functions (table in
- * supabase/migrations/20260925010655_core_schema_fixes.sql) to AppErrors, and never lets the
- * database message, details, or hint reach the client-facing message or details.
+ * supabase/migrations/20260925010655_core_schema_fixes.sql, extended by the channels, messages,
+ * invites, and bans migrations; HX013 comes from 20260926130308_bans.sql) to AppErrors, and never
+ * lets the database message, details, or hint reach the client-facing message or details.
  */
 
 const SECRET = 'SECRET-DB-MESSAGE (ROWVALUE)';
@@ -28,6 +29,7 @@ describe('rpcFailure', () => {
     ['HX010', ConflictError, 409, 'IDEMPOTENCY_KEY_REUSED'],
     ['HX011', ConflictError, 409, 'ALREADY_MEMBER'],
     ['HX012', ConflictError, 409, 'INVITE_ALREADY_PENDING'],
+    ['HX013', ConflictError, 409, 'USER_BANNED'],
     ['22023', ValidationError, 422, 'VALIDATION_FAILED'],
     ['23514', ValidationError, 422, 'VALIDATION_FAILED'],
   ] as const)('maps %s to %s (%i %s) without echoing the DB message', (code, type, status, errorCode) => {
@@ -91,6 +93,14 @@ describe('rpcFailure', () => {
     expect(pending.details).toBeUndefined();
   });
 
+  it('uses a generic message without details for the ban code HX013, even with a field given', () => {
+    const banned = rpcFailure('create_direct_invite', { code: 'HX013', message: SECRET }, { field: 'body.steamId' });
+    expect(banned).toBeInstanceOf(ConflictError);
+    expect(banned.message).toBe('That person is banned from this room.');
+    expect(banned.details).toBeUndefined();
+    expect(clientFacing(banned)).not.toContain('SECRET');
+  });
+
   it('returns the caller-supplied error for 23505 when the function knows which unique constraint it hits', () => {
     const taken = new ConflictError('A channel with this name already exists in this room.', 'CHANNEL_NAME_TAKEN');
     const err = rpcFailure('create_channel', { code: '23505', message: SECRET }, { uniqueViolation: taken });
@@ -99,7 +109,7 @@ describe('rpcFailure', () => {
     expect(clientFacing(err)).not.toContain('SECRET');
   });
 
-  it.each(['HX001', 'HX002', 'HX006', 'HX009', 'HX010', 'HX011', 'HX012', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
+  it.each(['HX001', 'HX002', 'HX006', 'HX009', 'HX010', 'HX011', 'HX012', 'HX013', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
     const taken = new ConflictError('taken', 'CHANNEL_NAME_TAKEN');
     expect(rpcFailure('create_channel', { code, message: SECRET }, { uniqueViolation: taken })).not.toBe(taken);
   });

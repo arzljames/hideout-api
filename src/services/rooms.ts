@@ -15,6 +15,7 @@ import { isLivekitNotFound, livekitRooms, voiceRoomName } from '../lib/livekit.j
 import { logger } from '../lib/logger.js';
 import { signRoomIconUrls } from '../lib/storage.js';
 import { broadcastToRoom, broadcastToUser } from '../realtime/broadcast.js';
+import { broadcastRevokedInvites, parseRevokedInvites } from './revokedInvites.js';
 
 export type Role = z.infer<typeof RoleSchema>;
 type RoomShape = z.infer<typeof Room>;
@@ -305,7 +306,8 @@ export async function updateRoom(
 }
 
 /**
- * Soft-deletes a room (owner only), then tells everyone and ends its voice sessions.
+ * Soft-deletes a room (owner only), then tells everyone and ends its voice sessions. Each
+ * signed-in invitee of a pending direct invite it revoked gets invite:revoked.
  * Voice channels are read before delete_room, because it soft-deletes them; a failure there
  * fails the request with nothing deleted. Members are read after it commits (their rows are
  * kept, and invite redemption locks the room, so nobody joins in between). Nothing after the
@@ -314,13 +316,16 @@ export async function updateRoom(
 export async function deleteRoom(roomId: string, profileId: string): Promise<void> {
   const voiceChannelIds = await listVoiceChannelIds(roomId);
 
-  const { error } = await db.rpc('delete_room', { p_room: roomId, p_actor: profileId });
+  const { data, error } = await db
+    .rpc('delete_room', { p_room: roomId, p_actor: profileId })
+    .overrideTypes<unknown, { merge: false }>();
   if (error) throw rpcFailure('delete_room', error);
 
   await Promise.allSettled([
     broadcastToRoom(roomId, 'room:deleted', { id: roomId }),
     notifyRemovedMembers(roomId),
     ...voiceChannelIds.map((channelId) => endVoiceRoom(channelId)),
+    ...broadcastRevokedInvites(parseRevokedInvites('delete_room', data)),
   ]);
 }
 
