@@ -23,7 +23,7 @@ import { ProfileSummary } from '../contracts/http/rooms.js';
 import { Role as RoleSchema } from '../contracts/events.js';
 import { db } from '../db/client.js';
 import { dbFailure, rpcFailure } from '../db/errors.js';
-import { ConflictError, GoneError, InternalError, NotFoundError, ValidationError } from '../errors.js';
+import { ConflictError, ForbiddenError, GoneError, InternalError, NotFoundError, ValidationError } from '../errors.js';
 import { logger } from '../lib/logger.js';
 import { newRandomToken } from '../lib/session.js';
 import { broadcastToRoom, broadcastToUser } from '../realtime/broadcast.js';
@@ -224,13 +224,20 @@ export async function findInviteAccess(inviteId: string, profileId: string): Pro
 // ---------------------------------------------------------------------------
 
 /**
- * Creates a link or direct invite. Everything the response and broadcast need is read before
- * the write, so nothing after the commit can fail except a malformed row (a bug).
+ * Creates a link or direct invite. Link invites are owner/admin only (a plain member gets 403
+ * before any write; create_link_invite re-checks it); any member can send direct invites.
+ * Everything the response and broadcast need is read before the write, so nothing after the
+ * commit can fail except a malformed row (a bug).
  */
-export async function createInvite(roomId: string, profileId: string, body: CreateInviteBody): Promise<CreatedInvite> {
-  return body.kind === 'link'
-    ? createLinkInvite(roomId, profileId, body)
-    : createDirectInvite(roomId, profileId, body);
+export async function createInvite(
+  roomId: string,
+  profileId: string,
+  role: Role,
+  body: CreateInviteBody,
+): Promise<CreatedInvite> {
+  if (body.kind === 'direct') return createDirectInvite(roomId, profileId, body);
+  if (!roleAtLeast(role, 'admin')) throw new ForbiddenError('Only the room owner or an admin can create invite links.');
+  return createLinkInvite(roomId, profileId, body);
 }
 
 async function createLinkInvite(

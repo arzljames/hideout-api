@@ -526,6 +526,8 @@ function fakeCreateLinkInvite(args: Record<string, unknown>): DbResult {
   if (!p_room || !p_actor || !p_token_hash) return rpcError('22023');
   if (p_expires_at != null && isPastTs(p_expires_at)) return rpcError('22023');
   if (!liveRoom(p_room) || !memberOf(p_room, p_actor)) return rpcError('HX001');
+  // Link invites are owner/admin only (the API checks first; the function re-checks).
+  if (memberOf(p_room, p_actor)?.role === 'member') return rpcError('HX002');
   if (!/^[0-9a-f]{64}$/.test(p_token_hash)) return rpcError('23514');
   if (p_max_uses != null && p_max_uses < 1) return rpcError('23514');
   if (world.invites.some((i) => i.token_hash === p_token_hash)) return rpcError('23505');
@@ -899,15 +901,25 @@ describe('invites: room-scoped access (create, list)', () => {
     expect(queries.filter((q) => q.table !== 'sessions')).toHaveLength(0);
   });
 
-  it.each<[Role]>([['owner'], ['admin'], ['member']])('lets an %s create link and direct invites and list', async (role) => {
+  it.each<[Role]>([['owner'], ['admin']])('lets an %s create link and direct invites and list', async (role) => {
     buildWorld(role);
     expect((await create({ kind: 'link' })).status).toBe(201);
     expect((await create({ kind: 'direct', steamId: OUTSIDER_STEAM })).status).toBe(201);
     expect((await listRoom()).status).toBe(200);
   });
 
-  it('loses access immediately when removed: the next create and list are 404s', async () => {
+  it('lets a plain member create direct invites and list, but not link invites (403 before any RPC)', async () => {
     buildWorld('member');
+    expectError(await create({ kind: 'link' }), 403, 'FORBIDDEN');
+    expectError(await create({ kind: 'link', expiresIn: 'never', maxUses: 5 }), 403, 'FORBIDDEN');
+    expect(fakeDb.rpc).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await create({ kind: 'direct', steamId: OUTSIDER_STEAM })).status).toBe(201);
+    expect((await listRoom()).status).toBe(200);
+  });
+
+  it('loses access immediately when removed: the next create and list are 404s', async () => {
+    buildWorld('admin');
     expect((await create({ kind: 'link' })).status).toBe(201);
     world.members = world.members.filter((m) => !(m.room_id === ROOM_ID && m.user_id === world.me));
     expectError(await create({ kind: 'link' }), 404, 'NOT_FOUND');
@@ -1160,7 +1172,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   });
 
   it('defaults to 7 days and unlimited uses, and returns the invite, the token (once), and the url', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     const before = Date.now();
     const res = await create({ kind: 'link' });
     const after = Date.now();
@@ -1202,7 +1214,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   });
 
   it('never sends the raw token to the database, and each invite gets a new token', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     const a = await create({ kind: 'link' });
     const b = await create({ kind: 'link' });
     expect(a.body.token).not.toBe(b.body.token);
@@ -1212,7 +1224,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   });
 
   it("sends p_expires_at null for 'never' and returns expiresAt null", async () => {
-    buildWorld('member');
+    buildWorld('admin');
     const res = await create({ kind: 'link', expiresIn: 'never' });
     expect(res.status).toBe(201);
     expect(rpcCalls('create_link_invite')[0]?.p_expires_at).toBeNull();
@@ -1223,7 +1235,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   it.each(Object.entries(INVITE_EXPIRY_MS).filter(([, ms]) => ms !== null) as [string, number][])(
     'maps expiresIn %s to now + %i ms',
     async (expiresIn, ms) => {
-      buildWorld('member');
+      buildWorld('admin');
       const before = Date.now();
       expect((await create({ kind: 'link', expiresIn })).status).toBe(201);
       const after = Date.now();
@@ -1246,7 +1258,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   });
 
   it.each([1, 5, 10, 25, 50, 100, null])('passes maxUses %s through', async (maxUses) => {
-    buildWorld('member');
+    buildWorld('admin');
     const res = await create({ kind: 'link', maxUses });
     expect(res.status).toBe(201);
     expect(rpcCalls('create_link_invite')[0]?.p_max_uses).toBe(maxUses);
@@ -1272,7 +1284,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
   });
 
   it('returns createdBy null when the creator profile row is missing', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     world.profiles = world.profiles.filter((p) => p.id !== world.me);
     const res = await create({ kind: 'link' });
     expect(res.status).toBe(201);
@@ -1286,7 +1298,7 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
     ['23505', 500, 'INTERNAL'],
     ['XX000', 500, 'INTERNAL'],
   ])('maps %s from create_link_invite to %i %s without echoing the DB error', async (sqlstate, status, code) => {
-    buildWorld('member');
+    buildWorld('admin');
     results.rpcByName.create_link_invite = rpcError(sqlstate);
     const res = await create({ kind: 'link' });
     expectError(res, status, code);
@@ -1294,8 +1306,18 @@ describe('POST /api/rooms/:roomId/invites (link)', () => {
     for (const leak of ['SECRET-DB-MESSAGE', 'ROWVALUE', 'HINTVALUE']) expect(res.text).not.toContain(leak);
   });
 
+  it('maps HX002 from create_link_invite itself (admin demoted after the fast-path check) to 403 FORBIDDEN', async () => {
+    buildWorld('admin');
+    results.rpcByName.create_link_invite = rpcError('HX002');
+    const res = await create({ kind: 'link' });
+    expectError(res, 403, 'FORBIDDEN');
+    expect(rpcCalls('create_link_invite')).toHaveLength(1);
+    expect(res.body.token).toBeUndefined();
+    for (const leak of ['SECRET-DB-MESSAGE', 'ROWVALUE', 'HINTVALUE', 'HX002']) expect(res.text).not.toContain(leak);
+  });
+
   it('returns a generic 500 (and no token) when create_link_invite returns an unexpected row', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     results.rpcByName.create_link_invite = { data: [{ id: randomUUID() }], error: null };
     const res = await create({ kind: 'link' });
     expectError(res, 500, 'INTERNAL');
@@ -2238,12 +2260,12 @@ describe('DELETE /api/invites/:inviteId broadcasts', () => {
 
 describe('invites: rate limits', () => {
   it('limits invite creation to 20 per hour per user; other users are unaffected', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     for (let i = 0; i < 20; i++) expect((await create({ kind: 'link' })).status).toBe(201);
     expectError(await create({ kind: 'link' }), 429, 'RATE_LIMITED');
     expectError(await create({ kind: 'direct', steamId: OUTSIDER_STEAM }), 429, 'RATE_LIMITED');
     expect(fakeDb.rpc).toHaveBeenCalledTimes(20);
-    becomeNewUser('member');
+    becomeNewUser('admin');
     expect((await create({ kind: 'link' })).status).toBe(201);
   });
 
@@ -2266,7 +2288,7 @@ describe('invites: rate limits', () => {
   });
 
   it('shares one 60-per-minute read budget between the room list and the inbox', async () => {
-    buildWorld('member');
+    buildWorld('admin');
     for (let i = 0; i < 30; i++) expect((await listRoom()).status).toBe(200);
     for (let i = 0; i < 30; i++) expect((await inbox()).status).toBe(200);
     expectError(await listRoom(), 429, 'RATE_LIMITED');
@@ -2293,6 +2315,9 @@ describe('invites: rate limits', () => {
       expectError(await revoke(randomUUID()), 404, 'NOT_FOUND');
       expectError(await revoke(others.id), 403, 'FORBIDDEN');
     }
+    // Link invites need admin: promote me so the full create budget can be spent on them.
+    const mine = world.members.find((m) => m.room_id === ROOM_ID && m.user_id === world.me);
+    if (mine) mine.role = 'admin';
     for (let i = 0; i < 20; i++) expect((await create({ kind: 'link' })).status).toBe(201);
     expect((await listRoom()).status).toBe(200);
     expect((await revoke(seedLink({ created_by: world.me }).row.id)).status).toBe(204);

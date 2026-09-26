@@ -46,7 +46,8 @@ export const roomInvitesRouter = documentedRouter('/api/rooms')
     inviteCreateLimiter,
     validate({ body: CreateInviteBody }),
     async (req, res) => {
-      const created = await createInvite(roomOf(req).roomId, authOf(req).profileId, req.body as CreateInviteBody);
+      const { roomId, role } = roomOf(req);
+      const created = await createInvite(roomId, authOf(req).profileId, role, req.body as CreateInviteBody);
       res.status(201).set('Cache-Control', 'no-store').json(created);
     },
   )
