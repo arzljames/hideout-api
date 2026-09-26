@@ -6,6 +6,8 @@ interface Schemas {
   body?: z.ZodType;
   query?: z.ZodType;
   params?: z.ZodType;
+  /** Checked only; req.headers is never replaced. Keys are Node's lowercased header names. */
+  headers?: z.ZodType;
 }
 
 function toIssues(location: string, error: z.ZodError): FieldIssue[] {
@@ -15,10 +17,14 @@ function toIssues(location: string, error: z.ZodError): FieldIssue[] {
   }));
 }
 
-/** Validates and replaces req.body / req.query / req.params with the parsed values. */
+/** Validates and replaces req.body / req.query / req.params with the parsed values; validates req.headers. */
 export function validate(schemas: Schemas): RequestHandler {
   return (req, _res, next) => {
     const issues: FieldIssue[] = [];
+    if (schemas.headers) {
+      const result = schemas.headers.safeParse(req.headers);
+      if (!result.success) issues.push(...toIssues('headers', result.error));
+    }
     for (const location of ['params', 'query', 'body'] as const) {
       const schema = schemas[location];
       if (!schema) continue;

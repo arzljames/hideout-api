@@ -21,7 +21,7 @@ type Shape =
   | { array: Shape }
   | { union: Shape[] };
 
-const REREGISTERED = ['ProfileSummary', 'Role', 'RoomIcon', 'Channel', 'Room', 'Member'] as const;
+const REREGISTERED = ['ProfileSummary', 'Role', 'RoomIcon', 'Channel', 'Room', 'Member', 'Message'] as const;
 
 function isNullOnly(schema: Json): boolean {
   return schema.type === 'null' || (Array.isArray(schema.type) && schema.type.every((t) => t === 'null'));

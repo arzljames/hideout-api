@@ -49,6 +49,39 @@ describe('validate', () => {
   });
 });
 
+describe('validate: headers', () => {
+  const Headers = z.object({ 'x-key': z.string().regex(/^[a-z]{1,4}$/).optional() });
+  const app = express()
+    .use(express.json())
+    .post('/h', validate({ headers: Headers, body: z.strictObject({ name: z.string().min(1) }) }), (req, res) => {
+      res.json({ key: req.get('x-key') ?? null, other: req.get('x-other') ?? null, body: req.body as unknown });
+    })
+    .use(errorHandler);
+
+  it('passes valid and absent headers through without replacing req.headers', async () => {
+    const res = await request(app).post('/h').set('X-Key', 'abc').set('X-Other', 'Kept As Is').send({ name: 'a' });
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ key: 'abc', other: 'Kept As Is', body: { name: 'a' } });
+
+    const absent = await request(app).post('/h').send({ name: 'a' });
+    expect(absent.status).toBe(200);
+    expect(absent.body.key).toBeNull();
+  });
+
+  it('matches header names case-insensitively (Node lowercases them)', async () => {
+    const res = await request(app).post('/h').set('X-KEY', 'TOOLONG').send({ name: 'a' });
+    expect(res.status).toBe(422);
+    expect(res.body.error.details).toEqual([{ path: 'headers.x-key', message: expect.any(String) as string }]);
+  });
+
+  it('reports header issues first, together with body issues, and never echoes the header value', async () => {
+    const res = await request(app).post('/h').set('X-Key', 'SECRETVALUE').send({ name: '' });
+    expect(res.status).toBe(422);
+    expect((res.body.error.details as { path: string }[]).map((d) => d.path)).toEqual(['headers.x-key', 'body.name']);
+    expect(res.text).not.toContain('SECRETVALUE');
+  });
+});
+
 describe('rate limits', () => {
   it('returns 429 RATE_LIMITED in the standard error shape', async () => {
     const app = express()
