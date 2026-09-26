@@ -20,10 +20,12 @@ import {
  *   GET /api/me/invites, POST /api/me/invites/:inviteId/accept|decline.
  * The database is faked at the supabase-js client with an in-memory world whose reads honour
  * only the filters the services actually send (and PostgREST's `!inner` embed semantics, the
- * `or` trees, order, and limit), so a dropped filter shows up as a leak. create_link_invite /
- * create_direct_invite / revoke_invite mirror supabase/migrations/20260926045852_invites.sql, and
- * redeem_invite_link / respond_to_direct_invite mirror 20260925010655_core_schema_fixes.sql
- * (statuses, check order, return shapes, SQLSTATEs). Broadcasts are observed at the Realtime
+ * `or` trees, order, and limit), so a dropped filter shows up as a leak. create_link_invite
+ * mirrors supabase/migrations/20260926054446_membership.sql, revoke_invite
+ * 20260926045852_invites.sql, and create_direct_invite / redeem_invite_link /
+ * respond_to_direct_invite 20260926130308_bans.sql minus its ban checks (this world has no
+ * bans; tests/bans.test.ts covers them) (statuses, check order, return shapes, SQLSTATEs).
+ * Broadcasts are observed at the Realtime
  * REST fetch boundary (so broadcast.ts's schema check runs). Every log line (LOG_LEVEL=trace) is
  * captured and checked for link tokens, token hashes, and secrets.
  */

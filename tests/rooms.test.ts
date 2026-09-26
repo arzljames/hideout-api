@@ -257,7 +257,7 @@ function fakeUpdateRoom(args: Record<string, unknown>): DbResult {
   return { data: { ...room, updated_at: UPDATED_AT }, error: null };
 }
 
-/** delete_room: soft-deletes the room and its channels; member rows are kept. */
+/** delete_room: soft-deletes the room and its channels; member rows are kept. Returns the revoked direct invites. */
 function fakeDeleteRoom(args: Record<string, unknown>): DbResult {
   const room = world.rooms.find((r) => r.id === args.p_room && r.deleted_at === null);
   if (!room) return rpcError('HX001');
@@ -265,7 +265,8 @@ function fakeDeleteRoom(args: Record<string, unknown>): DbResult {
   for (const channel of world.channels) {
     if (channel.room_id === room.id && channel.deleted_at === null) channel.deleted_at = UPDATED_AT;
   }
-  return { data: null, error: null };
+  // No invites in this world, so no revoked direct invites to return.
+  return { data: [], error: null };
 }
 
 function install(): void {

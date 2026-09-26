@@ -193,7 +193,9 @@ registry.registerPath({
   summary: 'Delete a room',
   description:
     'Owner only. Soft-deletes the room and its channels, ends its voice sessions, broadcasts `room:deleted` on ' +
-    '`room:<roomId>` and `member:removed` on each member’s `user:<profileId>`. Non-members get 404.' +
+    '`room:<roomId>` and `member:removed` on each member’s `user:<profileId>`, revokes the room’s pending ' +
+    'invites, and sends `invite:revoked` on the `user:<profileId>` of each signed-in invitee of a pending direct ' +
+    'invite it revoked. Non-members get 404.' +
     writeNote,
   request: { params: RoomIdParams },
   responses: {

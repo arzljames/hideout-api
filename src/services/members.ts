@@ -1,80 +1,67 @@
-import { z } from 'zod';
 import type { ChangeRoleBody } from '../contracts/http/members.js';
 import type { RoomDetail } from '../contracts/http/rooms.js';
 import { db } from '../db/client.js';
 import { rpcFailure } from '../db/errors.js';
 import { NotFoundError } from '../errors.js';
-import { logger } from '../lib/logger.js';
 import { broadcastToRoom, broadcastToUser } from '../realtime/broadcast.js';
+import { broadcastRevokedInvites, parseRevokedInvites, type RevokedInvite } from './revokedInvites.js';
 import { findMember, getRoomDetail, listVoiceChannelIds, removeFromVoice, type MemberShape } from './rooms.js';
 
 /*
  * Membership writes. Every rule is enforced by the Postgres function under the room lock
- * (remove_member, change_role, transfer_ownership); the route middleware is only a fast path.
+ * (remove_member, change_role, transfer_ownership; ban_member in services/bans.ts); the route
+ * middleware is only a fast path.
  * Ids arrive lowercased (requireRoomMember / requireMemberTarget / the service for body ids).
  *
- * Revoking access (leave, removal) updates the database, broadcasts, and removes the person from
+ * Revoking access (leave, removal, ban) updates the database, broadcasts, and removes the person from
  * LiveKit together (CLAUDE.md rule 9). Voice channels are read before the write, so a failed read
  * fails the request with nothing changed; nothing after the write can fail it.
  */
 
-/**
- * One row per direct invite remove_member revoked (ones the target created and ones addressed to
- * the target). invitee_profile_id is null when the invitee hasn't signed in yet.
- */
-const RevokedInviteRows = z.array(
-  z.object({ invite_id: z.guid(), invitee_profile_id: z.guid().nullable() }),
-);
-
-interface RevokedInvite {
-  inviteId: string;
-  inviteeProfileId: string;
-}
-
-interface DeletedMembership {
+/** What a membership-ending write (remove_member, ban_member) left for the post-commit effects. */
+export interface EndedMembership {
+  /** The room's live voice channels, read before the write. */
   voiceChannelIds: string[];
   revokedInvites: RevokedInvite[];
 }
 
-/** Parses remove_member's rows. The write has committed, so a bad shape is logged, not thrown. */
-function parseRevokedInvites(data: unknown): RevokedInvite[] {
-  const rows = RevokedInviteRows.safeParse(data ?? []);
-  if (!rows.success) {
-    // Issue paths and codes only: the rows carry ids.
-    const issues = rows.error.issues.map(({ path, code }) => ({ path, code }));
-    logger.error({ issues }, 'remove_member returned unexpected rows; invite:revoked not sent');
-    return [];
-  }
-  return rows.data.flatMap(({ invite_id, invitee_profile_id }) =>
-    invitee_profile_id
-      ? [{ inviteId: invite_id.toLowerCase(), inviteeProfileId: invitee_profile_id.toLowerCase() }]
-      : [],
-  );
-}
-
-async function deleteMembership(roomId: string, actorId: string, targetId: string): Promise<DeletedMembership> {
+async function deleteMembership(roomId: string, actorId: string, targetId: string): Promise<EndedMembership> {
   const voiceChannelIds = await listVoiceChannelIds(roomId);
   const { data, error } = await db
     .rpc('remove_member', { p_room: roomId, p_actor: actorId, p_target: targetId })
     .overrideTypes<unknown, { merge: false }>();
   if (error) throw rpcFailure('remove_member', error);
-  return { voiceChannelIds, revokedInvites: parseRevokedInvites(data) };
+  return { voiceChannelIds, revokedInvites: parseRevokedInvites('remove_member', data) };
 }
 
-function broadcastRevokedInvites(revokedInvites: readonly RevokedInvite[]): Promise<boolean>[] {
-  return revokedInvites.map(({ inviteId, inviteeProfileId }) =>
-    broadcastToUser(inviteeProfileId, 'invite:revoked', { inviteId }),
-  );
+/**
+ * The post-commit side effects of someone losing membership (leave, removal, ban): member:left
+ * on the room, member:removed on their user topic (removal and ban only; `banned: true` for a
+ * ban), LiveKit removal from every voice channel, and invite:revoked to each signed-in invitee
+ * of a revoked direct invite. Never rejects: the write has committed.
+ */
+export async function announceMembershipEnded(
+  roomId: string,
+  userId: string,
+  { voiceChannelIds, revokedInvites }: EndedMembership,
+  removal: 'left' | 'removed' | 'banned',
+): Promise<void> {
+  const notifyTarget =
+    removal === 'left'
+      ? []
+      : [broadcastToUser(userId, 'member:removed', removal === 'banned' ? { roomId, banned: true } : { roomId })];
+  await Promise.allSettled([
+    broadcastToRoom(roomId, 'member:left', { roomId, userId }),
+    ...notifyTarget,
+    removeFromVoice(voiceChannelIds, userId),
+    ...broadcastRevokedInvites(revokedInvites),
+  ]);
 }
 
 /** The caller leaves the room. The owner can't (409 OWNER_PROTECTED). */
 export async function leaveRoom(roomId: string, profileId: string): Promise<void> {
-  const { voiceChannelIds, revokedInvites } = await deleteMembership(roomId, profileId, profileId);
-  await Promise.allSettled([
-    broadcastToRoom(roomId, 'member:left', { roomId, userId: profileId }),
-    removeFromVoice(voiceChannelIds, profileId),
-    ...broadcastRevokedInvites(revokedInvites),
-  ]);
+  const ended = await deleteMembership(roomId, profileId, profileId);
+  await announceMembershipEnded(roomId, profileId, ended, 'left');
 }
 
 /**
@@ -84,13 +71,8 @@ export async function leaveRoom(roomId: string, profileId: string): Promise<void
 export async function removeMember(roomId: string, actorId: string, targetId: string): Promise<void> {
   if (targetId.toLowerCase() === actorId.toLowerCase()) return leaveRoom(roomId, actorId);
 
-  const { voiceChannelIds, revokedInvites } = await deleteMembership(roomId, actorId, targetId);
-  await Promise.allSettled([
-    broadcastToRoom(roomId, 'member:left', { roomId, userId: targetId }),
-    broadcastToUser(targetId, 'member:removed', { roomId }),
-    removeFromVoice(voiceChannelIds, targetId),
-    ...broadcastRevokedInvites(revokedInvites),
-  ]);
+  const ended = await deleteMembership(roomId, actorId, targetId);
+  await announceMembershipEnded(roomId, targetId, ended, 'removed');
 }
 
 /**

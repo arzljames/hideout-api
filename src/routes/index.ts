@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { authRouter } from './auth.js';
+import { roomBansRouter } from './bans.js';
 import { channelsRouter, roomChannelsRouter } from './channels.js';
 import { createContractRouter } from './contract.js';
 import { docsRouter } from './docs.js';
@@ -28,6 +29,7 @@ apiRouter.use(requireAuth);
 mount(apiRouter, roomsRouter);
 mount(apiRouter, roomChannelsRouter);
 mount(apiRouter, roomMembersRouter);
+mount(apiRouter, roomBansRouter);
 mount(apiRouter, channelsRouter);
 mount(apiRouter, channelMessagesRouter);
 mount(apiRouter, messagesRouter);

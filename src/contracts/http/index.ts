@@ -7,5 +7,6 @@ import './channels.js';
 import './messages.js';
 import './invites.js';
 import './members.js';
+import './bans.js';
 
 export { registry } from './registry.js';

@@ -104,7 +104,8 @@ export const serverEvents = {
     }),
     // A pending direct invite to this user was revoked: drop it from the inbox.
     'invite:revoked': z.object({ inviteId: Id }),
-    'member:removed': z.object({ roomId: Id }),
+    // `banned: true` when the removal was a ban (absent otherwise): the client can say so.
+    'member:removed': z.object({ roomId: Id, banned: z.boolean().optional() }),
     'session:expired': z.object({}),
   },
 } as const satisfies Record<TopicKind, Record<string, z.ZodObject>>;
