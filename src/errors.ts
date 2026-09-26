@@ -17,6 +17,12 @@ export const errorCodes = [
   'CHANNEL_ORDER_STALE',
   'CHANNEL_NOT_TEXT',
   'IDEMPOTENCY_KEY_REUSED',
+  'ALREADY_MEMBER',
+  'INVITE_ALREADY_PENDING',
+  'INVITE_ALREADY_RESPONDED',
+  'INVITE_EXPIRED',
+  'INVITE_REVOKED',
+  'INVITE_USED_UP',
   'PAYLOAD_TOO_LARGE',
   'VALIDATION_FAILED',
   'RATE_LIMITED',
@@ -70,6 +76,13 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   constructor(message: string, code: ErrorCode = 'CONFLICT') {
     super(409, code, message);
+  }
+}
+
+/** The resource existed but can no longer be used (e.g. an expired, revoked, or used-up invite). */
+export class GoneError extends AppError {
+  constructor(message: string, code: ErrorCode) {
+    super(410, code, message);
   }
 }
 

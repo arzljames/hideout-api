@@ -5,5 +5,6 @@ import './auth.js';
 import './rooms.js';
 import './channels.js';
 import './messages.js';
+import './invites.js';
 
 export { registry } from './registry.js';

@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -649,6 +649,458 @@
           "body"
         ],
         "additionalProperties": false
+      },
+      "InviteExpiresIn": {
+        "type": "string",
+        "enum": [
+          "30m",
+          "1h",
+          "6h",
+          "12h",
+          "1d",
+          "7d",
+          "never"
+        ],
+        "description": "How long a link invite stays valid. `never` = no expiry."
+      },
+      "InviteMaxUses": {
+        "anyOf": [
+          {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          {
+            "type": "number",
+            "enum": [
+              5
+            ]
+          },
+          {
+            "type": "number",
+            "enum": [
+              10
+            ]
+          },
+          {
+            "type": "number",
+            "enum": [
+              25
+            ]
+          },
+          {
+            "type": "number",
+            "enum": [
+              50
+            ]
+          },
+          {
+            "type": "number",
+            "enum": [
+              100
+            ]
+          }
+        ],
+        "description": "How many people can join with a link invite."
+      },
+      "CreateInviteBody": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "link"
+                ]
+              },
+              "expiresIn": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/InviteExpiresIn"
+                  },
+                  {
+                    "description": "Default `7d`."
+                  }
+                ]
+              },
+              "maxUses": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "enum": [
+                      1
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      5
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      10
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      25
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      50
+                    ]
+                  },
+                  {
+                    "type": "number",
+                    "enum": [
+                      100
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "Null or omitted = unlimited uses."
+              }
+            },
+            "required": [
+              "kind"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "direct"
+                ]
+              },
+              "steamId": {
+                "type": "string",
+                "pattern": "^7656119[0-9]{10}$",
+                "description": "SteamID64: 17 digits starting with `7656119`.",
+                "example": "76561197960287930"
+              }
+            },
+            "required": [
+              "kind",
+              "steamId"
+            ],
+            "additionalProperties": false
+          }
+        ],
+        "description": "`link`: a shareable link (optional expiry and max uses). `direct`: an invite to one Steam account, single use, expiring after 7 days."
+      },
+      "InviteStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "expired",
+          "used_up",
+          "revoked",
+          "accepted",
+          "declined"
+        ],
+        "description": "Computed when read. `accepted`/`declined` only apply to direct invites; an accepted or declined invite that was later revoked stays `accepted`/`declined`. More values may be added."
+      },
+      "InviteKind": {
+        "type": "string",
+        "enum": [
+          "link",
+          "direct"
+        ]
+      },
+      "Invite": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "roomId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/InviteKind"
+          },
+          "createdBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "inviteeSteamId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^7656119[0-9]{10}$",
+            "description": "Set for direct invites, null for links.",
+            "example": "76561197960287930"
+          },
+          "maxUses": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Null = unlimited (links only)."
+          },
+          "uses": {
+            "type": "integer"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InviteStatus"
+          }
+        },
+        "required": [
+          "id",
+          "roomId",
+          "kind",
+          "createdBy",
+          "inviteeSteamId",
+          "maxUses",
+          "uses",
+          "expiresAt",
+          "createdAt",
+          "status"
+        ],
+        "description": "An invite as its room sees it. Never includes the link token: it is shown once, when the link is created. `createdBy` is null once the creator’s profile was deleted."
+      },
+      "CreatedInvite": {
+        "type": "object",
+        "properties": {
+          "invite": {
+            "$ref": "#/components/schemas/Invite"
+          },
+          "token": {
+            "type": "string",
+            "description": "Link invites only: the raw token. Shown only in this response; it can’t be retrieved later."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "Link invites only: `WEB_ORIGIN/invite/<token>`, ready to share."
+          }
+        },
+        "required": [
+          "invite"
+        ]
+      },
+      "InvitePage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Invite"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "InvitePreviewInviter": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string"
+          },
+          "avatarUrl": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uri"
+          }
+        },
+        "required": [
+          "displayName",
+          "avatarUrl"
+        ],
+        "description": "Who created a link invite, as the public preview shows them (no profile id)."
+      },
+      "InvitePreview": {
+        "type": "object",
+        "properties": {
+          "room": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "$ref": "#/components/schemas/RoomIcon"
+              }
+            },
+            "required": [
+              "name",
+              "icon"
+            ]
+          },
+          "memberCount": {
+            "type": "integer",
+            "description": "Current number of members."
+          },
+          "invitedBy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvitePreviewInviter"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Null once the creator’s profile was deleted."
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "room",
+          "memberCount",
+          "invitedBy",
+          "expiresAt"
+        ]
+      },
+      "RedeemInviteResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "joined",
+              "already_member"
+            ],
+            "description": "`already_member`: you were already in the room (e.g. a retry); no use was consumed."
+          },
+          "room": {
+            "$ref": "#/components/schemas/RoomDetail"
+          }
+        },
+        "required": [
+          "status",
+          "room"
+        ]
+      },
+      "AcceptInviteResult": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "already_member"
+            ],
+            "description": "`already_member`: you were already in the room, or this is a retry of an accept that succeeded."
+          },
+          "room": {
+            "$ref": "#/components/schemas/RoomDetail"
+          }
+        },
+        "required": [
+          "status",
+          "room"
+        ]
+      },
+      "InboxInvite": {
+        "type": "object",
+        "properties": {
+          "inviteId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "room": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "name": {
+                "type": "string"
+              },
+              "icon": {
+                "$ref": "#/components/schemas/RoomIcon"
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "icon"
+            ]
+          },
+          "invitedBy": {
+            "$ref": "#/components/schemas/ProfileSummary"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "inviteId",
+          "room",
+          "invitedBy",
+          "expiresAt"
+        ],
+        "description": "A pending direct invite; the same shape as the `invite:received` event payload."
+      },
+      "InboxPage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InboxInvite"
+            },
+            "description": "Newest first, at most 100."
+          }
+        },
+        "required": [
+          "data"
+        ]
       }
     },
     "parameters": {}
@@ -2273,6 +2725,729 @@
           },
           "404": {
             "description": "Message not found or deleted, its channel or room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/invites": {
+      "post": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Create an invite",
+        "description": "Any member can create invites. `link`: returns the invite plus `token` and `url`; the token is shown only in this response, so share it now. `direct`: invites one Steam account (single use, expires after 7 days); if that person has signed in, `invite:received` is broadcast on their `user:<profileId>`, otherwise it appears in their inbox when they sign in. An expired pending direct invite is replaced automatically. Not idempotent. Non-members get 404. Rate limited to 20/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInviteBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The new invite (with `token` and `url` for links).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatedInvite"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`ALREADY_MEMBER`: that Steam account is already in the room. `INVITE_ALREADY_PENDING`: an unexpired direct invite to that Steam account is pending; revoke it first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body (kind, expiresIn, maxUses, or steamId).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "List a room’s invites",
+        "description": "Owners and admins see every invite in the room; members see only the invites they created. Newest first, cursor-paginated: pass `nextCursor` back as `cursor` until it is null. With `status=active` a page can hold fewer than `limit` items (even none) while `nextCursor` is not null; keep going until it is null. Non-members get 404. Sent with `Cache-Control: no-store`. Rate limited to 60/minute per user.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Opaque `nextCursor` from the previous page."
+            },
+            "required": false,
+            "description": "Opaque `nextCursor` from the previous page.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "description": "Page size, 1–100 (default 50)."
+            },
+            "required": false,
+            "description": "Page size, 1–100 (default 50).",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "all"
+              ],
+              "default": "active",
+              "description": "`active` (default): only invites that can still be used. `all`: every invite."
+            },
+            "required": false,
+            "description": "`active` (default): only invites that can still be used. `all`: every invite.",
+            "name": "status",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of invites.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid status, cursor, or limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/invites/{inviteId}": {
+      "delete": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Revoke an invite",
+        "description": "The invite’s creator, or an owner or admin of its room. Idempotent: revoking a revoked invite is 204. Revoking an accepted invite never removes the member. For a pending direct invite to someone who has signed in, broadcasts `invite:revoked` on their `user:<profileId>`. Non-members of the invite’s room get 404. Rate limited to 60/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invite id."
+            },
+            "required": true,
+            "description": "Invite id.",
+            "name": "inviteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Revoked."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member who didn’t create the invite.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invite not found, its room is deleted, or you are not a member of its room.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/invites/{token}/preview": {
+      "get": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Preview a link invite",
+        "description": "Public (no session needed): what the invite page shows before joining. Returns 404 with the same body for every unusable invite (malformed or unknown token, revoked, expired, used up, deleted room), so it reveals nothing about invalid links. Sent with `Cache-Control: no-store`. Rate limited to 60/minute per IP.",
+        "security": [],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "description": "The link invite token (43 base64url characters). A malformed token is a 404, like an unknown one."
+            },
+            "required": true,
+            "description": "The link invite token (43 base64url characters). A malformed token is a 404, like an unknown one.",
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The invite preview.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitePreview"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "This invite is invalid or no longer usable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/invites/{token}/redeem": {
+      "post": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Join a room with a link invite",
+        "description": "Joins the invite’s room as a member and returns the room. Idempotent by design: redeeming again (or a retry) returns `already_member` without using up the invite. On join, broadcasts `member:joined` on `room:<roomId>`. 410 codes: `INVITE_REVOKED`, `INVITE_EXPIRED`, `INVITE_USED_UP`. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{43}$",
+              "description": "The link invite token (43 base64url characters). A malformed token is a 404, like an unknown one."
+            },
+            "required": true,
+            "description": "The link invite token (43 base64url characters). A malformed token is a 404, like an unknown one.",
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Joined (or already a member).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RedeemInviteResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Malformed or unknown token, or the room was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`INVITE_REVOKED`, `INVITE_EXPIRED`, or `INVITE_USED_UP`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/invites": {
+      "get": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "My pending direct invites",
+        "description": "Pending, unexpired direct invites to the caller’s Steam account in live rooms, newest first (at most 100). Keep it current with `invite:received` and `invite:revoked` on `user:<profileId>`. Sent with `Cache-Control: no-store`. Rate limited to 60/minute per user.",
+        "responses": {
+          "200": {
+            "description": "The inbox.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InboxPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/invites/{inviteId}/accept": {
+      "post": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Accept a direct invite",
+        "description": "Joins the room and returns it. Idempotent: retrying an accept that succeeded returns `already_member`. On join, broadcasts `member:joined` on `room:<roomId>`. Invites addressed to someone else are 404. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invite id."
+            },
+            "required": true,
+            "description": "Invite id.",
+            "name": "inviteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Accepted (or already a member).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptInviteResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invite not found, not addressed to you, or its room was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`INVITE_ALREADY_RESPONDED`: the invite was already declined, or accepted and you are no longer a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`INVITE_REVOKED` or `INVITE_EXPIRED`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/invites/{inviteId}/decline": {
+      "post": {
+        "tags": [
+          "invites"
+        ],
+        "summary": "Decline a direct invite",
+        "description": "Declines the invite; nobody is notified. Idempotent: declining a declined invite is 204. Invites addressed to someone else are 404. Redeem, accept, and decline share one rate limit: 10/minute per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Invite id."
+            },
+            "required": true,
+            "description": "Invite id.",
+            "name": "inviteId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Declined."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Invite not found, not addressed to you, or its room was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`INVITE_ALREADY_RESPONDED`: the invite was already accepted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "`INVITE_REVOKED` or `INVITE_EXPIRED`.",
             "content": {
               "application/json": {
                 "schema": {

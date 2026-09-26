@@ -50,7 +50,13 @@ export const realtimeTokenLimiter = limiter(HOUR, 30, byUser);
 export const messageLimiter = limiter(10_000, 10, byUser);
 export const messageReadLimiter = limiter(MINUTE, 120, byUser);
 export const inviteCreateLimiter = limiter(HOUR, 20, byUser);
+/** Shared by redeem, accept, and decline: one budget for responding to invites. */
 export const inviteRedeemLimiter = limiter(MINUTE, 10, byUser);
+/** Public (no session), so per IP. */
+export const invitePreviewLimiter = limiter(MINUTE, 60);
+/** Shared by a room's invite list and the caller's inbox. */
+export const inviteReadLimiter = limiter(MINUTE, 60, byUser);
+export const inviteRevokeLimiter = limiter(HOUR, 60, byUser);
 export const roomCreateLimiter = limiter(HOUR, 10, byUser);
 export const roomUpdateLimiter = limiter(HOUR, 30, byUser);
 export const channelWriteLimiter = limiter(HOUR, 60, byUser);

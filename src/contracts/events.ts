@@ -102,6 +102,8 @@ export const serverEvents = {
       invitedBy: ProfileSummary,
       expiresAt: Timestamp.nullable(),
     }),
+    // A pending direct invite to this user was revoked: drop it from the inbox.
+    'invite:revoked': z.object({ inviteId: Id }),
     'member:removed': z.object({ roomId: Id }),
     'session:expired': z.object({}),
   },

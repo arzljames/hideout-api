@@ -26,6 +26,8 @@ describe('rpcFailure', () => {
     ['HX008', ConflictError, 409, 'LAST_TEXT_CHANNEL'],
     ['HX009', ConflictError, 409, 'CHANNEL_NOT_TEXT'],
     ['HX010', ConflictError, 409, 'IDEMPOTENCY_KEY_REUSED'],
+    ['HX011', ConflictError, 409, 'ALREADY_MEMBER'],
+    ['HX012', ConflictError, 409, 'INVITE_ALREADY_PENDING'],
     ['22023', ValidationError, 422, 'VALIDATION_FAILED'],
     ['23514', ValidationError, 422, 'VALIDATION_FAILED'],
   ] as const)('maps %s to %s (%i %s) without echoing the DB message', (code, type, status, errorCode) => {
@@ -80,6 +82,15 @@ describe('rpcFailure', () => {
     expect(reused.details).toBeUndefined();
   });
 
+  it('uses generic messages without details for the invite codes HX011 and HX012', () => {
+    const member = rpcFailure('create_direct_invite', { code: 'HX011', message: SECRET }, { field: 'body.steamId' });
+    expect(member.message).toBe('That person is already a member of this room.');
+    expect(member.details).toBeUndefined();
+    const pending = rpcFailure('create_direct_invite', { code: 'HX012', message: SECRET }, { field: 'body.steamId' });
+    expect(pending.message).toBe('That person already has a pending invite to this room. Revoke it to send a new one.');
+    expect(pending.details).toBeUndefined();
+  });
+
   it('returns the caller-supplied error for 23505 when the function knows which unique constraint it hits', () => {
     const taken = new ConflictError('A channel with this name already exists in this room.', 'CHANNEL_NAME_TAKEN');
     const err = rpcFailure('create_channel', { code: '23505', message: SECRET }, { uniqueViolation: taken });
@@ -88,7 +99,7 @@ describe('rpcFailure', () => {
     expect(clientFacing(err)).not.toContain('SECRET');
   });
 
-  it.each(['HX001', 'HX002', 'HX006', 'HX009', 'HX010', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
+  it.each(['HX001', 'HX002', 'HX006', 'HX009', 'HX010', 'HX011', 'HX012', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
     const taken = new ConflictError('taken', 'CHANNEL_NAME_TAKEN');
     expect(rpcFailure('create_channel', { code, message: SECRET }, { uniqueViolation: taken })).not.toBe(taken);
   });
