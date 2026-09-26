@@ -17,7 +17,7 @@ describe('realtime event contract', () => {
       'room:updated',
       'voice:participants',
     ]);
-    expect(names('user')).toEqual(['invite:received', 'member:removed', 'session:expired']);
+    expect(names('user')).toEqual(['invite:received', 'invite:revoked', 'member:removed', 'session:expired']);
   });
 
   it('only lets browsers send typing, and only on the typing topic', () => {

@@ -32,7 +32,8 @@ export function roleAtLeast(role: Role, minRole: Role): boolean {
   return ROLE_RANK[role] >= ROLE_RANK[minRole];
 }
 
-interface RoomRow {
+/** The room columns toRooms reads. */
+export interface RoomRow {
   id: string;
   name: string;
   icon_emoji: string | null;
@@ -57,14 +58,14 @@ interface MemberRow {
   profiles: { id: string; display_name: string; avatar_url: string | null; current_game: string | null } | null;
 }
 
-const ROOM_COLUMNS = 'id, name, icon_emoji, icon_path, created_at';
+export const ROOM_COLUMNS = 'id, name, icon_emoji, icon_path, created_at';
 
 // ---------------------------------------------------------------------------
 // Row mapping
 // ---------------------------------------------------------------------------
 
 /** Maps room rows to the Room shape; icon_path never leaves this function (only its signed URL). */
-async function toRooms(rows: RoomRow[]): Promise<RoomShape[]> {
+export async function toRooms(rows: RoomRow[]): Promise<RoomShape[]> {
   const signed = await signRoomIconUrls(rows.flatMap((row) => (row.icon_path ? [row.icon_path] : [])));
   return rows.map((row) => {
     const url = row.icon_path ? signed.get(row.icon_path) : undefined;
@@ -120,6 +121,23 @@ export async function findMembership(roomId: string, profileId: string): Promise
 
   if (error) throw dbFailure('membership lookup', error);
   return data?.role ?? null;
+}
+
+/**
+ * One member of a room, as `member:joined` carries it, or null if they aren't a member (or
+ * their profile is gone).
+ */
+export async function findMember(roomId: string, profileId: string): Promise<MemberShape | null> {
+  const { data, error } = await db
+    .from('room_members')
+    .select('user_id, role, joined_at, profiles!inner(id, display_name, avatar_url, current_game)')
+    .eq('room_id', roomId)
+    .eq('user_id', profileId)
+    .maybeSingle<MemberRow>();
+
+  if (error) throw dbFailure('member lookup', error);
+  if (!data?.profiles) return null;
+  return toMember(roomId, { ...data, profiles: data.profiles });
 }
 
 /**

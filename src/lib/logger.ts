@@ -8,7 +8,19 @@ import { env } from '../config/env.js';
 export function redactUrl(url: string | undefined): string | undefined {
   if (url === undefined) return undefined;
   const path = url.split('?')[0] ?? '';
-  return path.replace(/^\/api\/invites\/[^/]+/, '/api/invites/[redacted]');
+  // Case-insensitive: Express routes /API/Invites/<token>/... to the same handlers.
+  return path.replace(/^\/api\/invites\/[^/]+/i, '/api/invites/[redacted]');
+}
+
+/*
+ * The invite page (WEB_ORIGIN/invite/<token>) calls the API, so browsers send the link token
+ * in Referer. Keep the origin and path shape, censor any /invite/<token> or /invites/<token>
+ * segment (any case), and drop the query and fragment like redactUrl does.
+ */
+export function redactReferer(referer: unknown): unknown {
+  if (typeof referer !== 'string') return referer;
+  const withoutQuery = referer.split(/[?#]/)[0] ?? '';
+  return withoutQuery.replace(/\/(invites?)\/[^/]+/gi, (_match, segment: string) => `/${segment}/[redacted]`);
 }
 
 interface SerializedReq {
@@ -65,7 +77,8 @@ export const logger = pino({
   },
 });
 
-/** pino-http request serializer: no query/params, redacted URL. */
+/** pino-http request serializer: no query/params, redacted URL and Referer (the live headers are never mutated). */
 export function serializeRequest(req: SerializedReq): SerializedReq {
-  return { id: req.id, method: req.method, url: redactUrl(req.url), headers: req.headers };
+  const headers = req.headers && 'referer' in req.headers ? { ...req.headers, referer: redactReferer(req.headers.referer) } : req.headers;
+  return { id: req.id, method: req.method, url: redactUrl(req.url), headers };
 }
