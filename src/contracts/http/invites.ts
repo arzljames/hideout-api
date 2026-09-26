@@ -4,10 +4,11 @@ import { registry } from './registry.js';
 import { ProfileSummary, RoomDetail, RoomIcon, RoomIdParams } from './rooms.js';
 
 /*
- * Invites: any member creates link or direct invites; the creator, an admin, or the owner
- * revokes them. Link invites are redeemed by token (the raw token is shown once, at creation;
- * only its SHA-256 is stored). Direct invites go to a SteamID and appear in that person's inbox
- * (GET /api/me/invites) once they sign in; they accept or decline.
+ * Invites: the owner and admins create link invites; any member creates direct invites. The
+ * creator, an admin, or the owner revokes them. Link invites are redeemed by token (the raw
+ * token is shown once, at creation; only its SHA-256 is stored). Direct invites go to a SteamID
+ * and appear in that person's inbox (GET /api/me/invites) once they sign in; they accept or
+ * decline.
  */
 
 const Timestamp = z.iso.datetime({ offset: true });
@@ -216,8 +217,8 @@ registry.registerPath({
   tags: ['invites'],
   summary: 'Create an invite',
   description:
-    'Any member can create invites. `link`: returns the invite plus `token` and `url`; the token is shown only ' +
-    'in this response, so share it now. `direct`: invites one Steam account (single use, expires after ' +
+    '`link` (owner or admin only; a plain member gets 403 `FORBIDDEN`): returns the invite plus `token` and ' +
+    '`url`; the token is shown only in this response, so share it now. `direct` (any member): invites one Steam account (single use, expires after ' +
     `${DIRECT_INVITE_TTL_DAYS} days); if that person has signed in, \`invite:received\` is broadcast on their ` +
     '`user:<profileId>`, otherwise it appears in their inbox when they sign in. An expired pending direct invite ' +
     'is replaced automatically. Not idempotent. Non-members get 404. Rate limited to 20/hour per user.' +
@@ -226,7 +227,7 @@ registry.registerPath({
   responses: {
     201: { description: 'The new invite (with `token` and `url` for links).', content: json(CreatedInvite) },
     ...authedErrors,
-    403: errorResponse(csrf),
+    403: errorResponse(`${csrf} Or a plain member tried to create a \`link\` invite (owner or admin required).`),
     404: roomNotFound,
     409: errorResponse(
       '`ALREADY_MEMBER`: that Steam account is already in the room. `INVITE_ALREADY_PENDING`: an unexpired ' +

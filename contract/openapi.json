@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, ALREADY_MEMBER, INVITE_ALREADY_PENDING, INVITE_ALREADY_RESPONDED, INVITE_EXPIRED, INVITE_REVOKED, INVITE_USED_UP, OWNER_PROTECTED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -1101,6 +1101,37 @@
         "required": [
           "data"
         ]
+      },
+      "ChangeRoleBody": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "enum": [
+              "admin",
+              "member"
+            ],
+            "description": "The new role. Ownership only moves via `POST /api/rooms/{roomId}/transfer-ownership`."
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "additionalProperties": false
+      },
+      "TransferOwnershipBody": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Profile id of the member who becomes the owner."
+          }
+        },
+        "required": [
+          "userId"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -2762,7 +2793,7 @@
           "invites"
         ],
         "summary": "Create an invite",
-        "description": "Any member can create invites. `link`: returns the invite plus `token` and `url`; the token is shown only in this response, so share it now. `direct`: invites one Steam account (single use, expires after 7 days); if that person has signed in, `invite:received` is broadcast on their `user:<profileId>`, otherwise it appears in their inbox when they sign in. An expired pending direct invite is replaced automatically. Not idempotent. Non-members get 404. Rate limited to 20/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "description": "`link` (owner or admin only; a plain member gets 403 `FORBIDDEN`): returns the invite plus `token` and `url`; the token is shown only in this response, so share it now. `direct` (any member): invites one Steam account (single use, expires after 7 days); if that person has signed in, `invite:received` is broadcast on their `user:<profileId>`, otherwise it appears in their inbox when they sign in. An expired pending direct invite is replaced automatically. Not idempotent. Non-members get 404. Rate limited to 20/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
         "parameters": [
           {
             "schema": {
@@ -2808,7 +2839,7 @@
             }
           },
           "403": {
-            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or a plain member tried to create a `link` invite (owner or admin required).",
             "content": {
               "application/json": {
                 "schema": {
@@ -3448,6 +3479,408 @@
           },
           "410": {
             "description": "`INVITE_REVOKED` or `INVITE_EXPIRED`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/me": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Leave a room",
+        "description": "Any member except the owner. Broadcasts `member:left` on `room:<roomId>` and disconnects the member from the room’s voice channels. Their pending invites in this room are revoked, as are pending direct invites addressed to them; each signed-in invitee of a revoked direct invite gets `invite:revoked` on their `user:<profileId>`. The owner gets 409 `OWNER_PROTECTED`: transfer ownership or delete the room first. Non-members get 404. Leave, remove, change role, and transfer ownership share one rate limit: 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Left the room."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_PROTECTED`: the room owner can't leave or be removed; transfer ownership or delete the room first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/members/{userId}": {
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Remove a member",
+        "description": "The owner removes anyone except themself; an admin removes plain members only. Broadcasts `member:left` on `room:<roomId>` and disconnects the member from the room’s voice channels. Their pending invites in this room are revoked, as are pending direct invites addressed to them; each signed-in invitee of a revoked direct invite gets `invite:revoked` on their `user:<profileId>`. Also broadcasts `member:removed` on the removed member’s `user:<profileId>`, so their client leaves the room. If `userId` is the caller’s own id, this behaves exactly like leaving (`DELETE /api/rooms/{roomId}/members/me`: same rules, no `member:removed`). Removing the owner is 409 `OWNER_PROTECTED`. Non-members get 404. Leave, remove, change role, and transfer ownership share one rate limit: 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Profile id of the member. A malformed id is a 404, like an unknown one."
+            },
+            "required": true,
+            "description": "Profile id of the member. A malformed id is a 404, like an unknown one.",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller’s role can’t remove this member (plain members; admins removing an admin).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404); or the target is not a member (or the userId is malformed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`OWNER_PROTECTED`: the room owner can't leave or be removed; transfer ownership or delete the room first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Change a member’s role",
+        "description": "Owner only: makes a member an admin or an admin a plain member. Broadcasts `member:role_changed` on `room:<roomId>`. The owner can’t change their own role (422); ownership moves only via transfer. Non-members get 404. If the response is a 5xx, the change may have been applied; refetch the room before retrying. Leave, remove, change role, and transfer ownership share one rate limit: 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Profile id of the member. A malformed id is a 404, like an unknown one."
+            },
+            "required": true,
+            "description": "Profile id of the member. A malformed id is a 404, like an unknown one.",
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeRoleBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The member with their new role.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Member"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is not the owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404); or the target is not a member (or the userId is malformed).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid role, or the owner targeted themself.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{roomId}/transfer-ownership": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Transfer room ownership",
+        "description": "Owner only: makes another member the owner; the caller becomes an admin. Broadcasts two `member:role_changed` events on `room:<roomId>` (the caller → `admin`, the new owner → `owner`). Returns the room as the caller now sees it. Non-members get 404. If the response is a 5xx, the change may have been applied; refetch the room before retrying. Leave, remove, change role, and transfer ownership share one rate limit: 30/hour per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Room id."
+            },
+            "required": true,
+            "description": "Room id.",
+            "name": "roomId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The room, with the caller now an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomDetail"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is not the owner.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Room not found, deleted, or you are not a member (non-members always get 404); or the new owner is not a member.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body, or `userId` is the caller’s own id.",
             "content": {
               "application/json": {
                 "schema": {

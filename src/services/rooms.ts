@@ -19,7 +19,7 @@ import { broadcastToRoom, broadcastToUser } from '../realtime/broadcast.js';
 export type Role = z.infer<typeof RoleSchema>;
 type RoomShape = z.infer<typeof Room>;
 type ChannelShape = z.infer<typeof Channel>;
-type MemberShape = z.infer<typeof Member>;
+export type MemberShape = z.infer<typeof Member>;
 
 /** Shown when an uploaded icon can't be signed; a room always has exactly one icon. */
 const FALLBACK_ICON_EMOJI = '💬';
@@ -312,14 +312,7 @@ export async function updateRoom(
  * delete can fail the request: it has already committed.
  */
 export async function deleteRoom(roomId: string, profileId: string): Promise<void> {
-  const voiceResult = await db
-    .from('channels')
-    .select('id')
-    .eq('room_id', roomId)
-    .eq('type', 'voice')
-    .is('deleted_at', null)
-    .overrideTypes<{ id: string }[], { merge: false }>();
-  if (voiceResult.error) throw dbFailure('voice channel list', voiceResult.error);
+  const voiceChannelIds = await listVoiceChannelIds(roomId);
 
   const { error } = await db.rpc('delete_room', { p_room: roomId, p_actor: profileId });
   if (error) throw rpcFailure('delete_room', error);
@@ -327,8 +320,21 @@ export async function deleteRoom(roomId: string, profileId: string): Promise<voi
   await Promise.allSettled([
     broadcastToRoom(roomId, 'room:deleted', { id: roomId }),
     notifyRemovedMembers(roomId),
-    ...voiceResult.data.map((channel) => endVoiceRoom(channel.id)),
+    ...voiceChannelIds.map((channelId) => endVoiceRoom(channelId)),
   ]);
+}
+
+/** Ids of the room's live voice channels. Read before a write that revokes voice access. */
+export async function listVoiceChannelIds(roomId: string): Promise<string[]> {
+  const { data, error } = await db
+    .from('channels')
+    .select('id')
+    .eq('room_id', roomId)
+    .eq('type', 'voice')
+    .is('deleted_at', null)
+    .overrideTypes<{ id: string }[], { merge: false }>();
+  if (error) throw dbFailure('voice channel list', error);
+  return data.map((channel) => channel.id.toLowerCase());
 }
 
 /** Sends member:removed to everyone in a just-deleted room. Never throws: the delete has committed. */
@@ -357,4 +363,22 @@ export async function endVoiceRoom(channelId: string): Promise<void> {
     if (isLivekitNotFound(err)) logger.debug({ channelId }, 'no LiveKit room to end for deleted voice channel');
     else logger.warn({ err, channelId }, 'could not end LiveKit room for deleted voice channel');
   }
+}
+
+/**
+ * Disconnects one person from each of the given voice channels' LiveKit rooms (rule 9: removal
+ * and leaving revoke voice too). Not being in a room, or the room not existing, is the common
+ * case. Never throws: the membership change has already committed.
+ */
+export async function removeFromVoice(channelIds: readonly string[], identity: string): Promise<void> {
+  await Promise.allSettled(
+    channelIds.map(async (channelId) => {
+      try {
+        await livekitRooms.removeParticipant(voiceRoomName(channelId), identity);
+      } catch (err) {
+        if (isLivekitNotFound(err)) logger.debug({ channelId }, 'not in LiveKit room; nothing to remove');
+        else logger.warn({ err, channelId }, 'could not remove participant from LiveKit room');
+      }
+    }),
+  );
 }

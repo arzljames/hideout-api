@@ -4,10 +4,13 @@
 -- invitee_profile_id, no function returning token_hash, integration with the unchanged
 -- redeem_invite_link() and respond_to_direct_invite(), and the new remove_member() revoking
 -- the target's pending invites (removal and voluntary leave).
+-- Updated for 20260926054446_membership: create_link_invite is owner/admin only (a plain
+-- member gets HX002), so links "created by a plain member" are inserted directly as fixtures
+-- (links members created before that migration still exist and must keep behaving).
 -- Runs inside the runner's transaction, which is always rolled back.
 begin;
 
-select plan(89);
+select plan(90);
 
 -- ---------------------------------------------------------------------------
 -- Fixtures (as the owner role)
@@ -127,7 +130,7 @@ select throws_ok(
 reset role;
 
 -- ---------------------------------------------------------------------------
--- create_link_invite (13-27)
+-- create_link_invite (13-28)
 -- ---------------------------------------------------------------------------
 set local role service_role;
 select throws_ok(
@@ -165,11 +168,16 @@ select throws_ok(
        '00000000-0000-0000-0000-00000000e905', repeat('90', 32), null, null) $$,
   'HX001', null, 'create_link_invite by a non-member raises HX001'
 );
+select throws_ok(
+  $$ select * from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
+       '00000000-0000-0000-0000-00000000e903', repeat('90', 32), null, null) $$,
+  'HX002', null, 'create_link_invite by a plain member raises HX002'
+);
 
 select set_config('test.l1',
   (select row_to_json(s)::text
      from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-            '00000000-0000-0000-0000-00000000e903', repeat('91', 32), 2, null) s),
+            '00000000-0000-0000-0000-00000000e902', repeat('91', 32), 2, null) s),
   true) is not null as _l1;
 
 select is(
@@ -177,9 +185,9 @@ select is(
               j ->> 'invitee_steam_id', j ->> 'max_uses', j ->> 'uses', j ->> 'expires_at',
               j ->> 'revoked_at')::text
      from (select current_setting('test.l1')::jsonb as j) x),
-  row('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-00000000e903', 'link',
+  row('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-00000000e902', 'link',
       null::text, '2', '0', null::text, null::text)::text,
-  'a plain member creates a link invite; created_by is the actor'
+  'an admin creates a link invite; created_by is the actor'
 );
 select is(
   (select array_agg(k order by k collate "C")
@@ -206,12 +214,12 @@ select is(
 );
 select throws_ok(
   $$ select * from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-       '00000000-0000-0000-0000-00000000e903', repeat('A', 64), null, null) $$,
+       '00000000-0000-0000-0000-00000000e902', repeat('A', 64), null, null) $$,
   '23514', null, 'a token hash that is not 64 lowercase hex characters raises 23514'
 );
 select throws_ok(
   $$ select * from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-       '00000000-0000-0000-0000-00000000e903', repeat('90', 32), 0, null) $$,
+       '00000000-0000-0000-0000-00000000e902', repeat('90', 32), 0, null) $$,
   '23514', null, 'max_uses 0 raises 23514'
 );
 select throws_ok(
@@ -225,7 +233,7 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- create_direct_invite (28-54)
+-- create_direct_invite (29-55)
 -- ---------------------------------------------------------------------------
 select throws_ok(
   $$ select * from public.create_direct_invite(null,
@@ -419,7 +427,7 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------
--- revoke_invite (55-69)
+-- revoke_invite (56-70)
 -- ---------------------------------------------------------------------------
 select throws_ok(
   $$ select * from public.revoke_invite(null, '00000000-0000-0000-0000-00000000e903') $$,
@@ -447,7 +455,7 @@ select throws_ok(
 select throws_ok(
   $$ select * from public.revoke_invite((current_setting('test.l1')::jsonb ->> 'id')::uuid,
        '00000000-0000-0000-0000-00000000e904') $$,
-  'HX002', null, 'a plain member cannot revoke another member''s invite (HX002)'
+  'HX002', null, 'a plain member cannot revoke an admin''s invite (HX002)'
 );
 select ok(
   (select i.revoked_at is null from public.invites i
@@ -457,9 +465,9 @@ select ok(
 select is(
   (select row(s.id, s.kind, s.revoked_at is not null, s.invitee_profile_id)::text
      from public.revoke_invite((current_setting('test.l1')::jsonb ->> 'id')::uuid,
-            '00000000-0000-0000-0000-00000000e903') s),
+            '00000000-0000-0000-0000-00000000e902') s),
   row((current_setting('test.l1')::jsonb ->> 'id')::uuid, 'link', true, null::uuid)::text,
-  'the creator (a plain member) revokes their link; invitee_profile_id is null for a link'
+  'the creator (an admin) revokes their link; invitee_profile_id is null for a link'
 );
 select ok(
   (select i.revoked_at is not null from public.invites i
@@ -475,14 +483,14 @@ set local role service_role;
 
 select is(
   (select s.revoked_at from public.revoke_invite((current_setting('test.l1')::jsonb ->> 'id')::uuid,
-     '00000000-0000-0000-0000-00000000e903') s),
+     '00000000-0000-0000-0000-00000000e902') s),
   '2001-02-03 00:00:00+00'::timestamptz,
   'revoking an already-revoked invite returns it unchanged'
 );
 select is(
   (select array_agg(k order by k collate "C")
      from public.revoke_invite((current_setting('test.l1')::jsonb ->> 'id')::uuid,
-            '00000000-0000-0000-0000-00000000e903') s,
+            '00000000-0000-0000-0000-00000000e902') s,
           jsonb_object_keys(row_to_json(s)::jsonb) k),
   array['accepted_at', 'created_at', 'created_by', 'declined_at', 'expires_at', 'id',
         'invitee_profile_id', 'invitee_steam_id', 'kind', 'max_uses', 'revoked_at', 'room_id',
@@ -515,10 +523,10 @@ select is(
 );
 
 -- ---------------------------------------------------------------------------
--- redeem_invite_link on created links (70-76)
+-- redeem_invite_link on created links (71-77)
 -- ---------------------------------------------------------------------------
 select id from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-  '00000000-0000-0000-0000-00000000e903', repeat('93', 32), 1, null);
+  '00000000-0000-0000-0000-00000000e902', repeat('93', 32), 1, null);
 
 select is(
   (select status from public.redeem_invite_link(repeat('93', 32), '00000000-0000-0000-0000-00000000e908')),
@@ -533,8 +541,11 @@ select is(
   'used_up', 'a created link is used_up after max_uses'
 );
 
-select id from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-  '00000000-0000-0000-0000-00000000e904', repeat('94', 32), null, null);
+-- A link plain member P created before links became owner/admin only (inserted directly).
+reset role;
+insert into public.invites (room_id, created_by, kind, token_hash) values
+  ('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-00000000e904', 'link', repeat('94', 32));
+set local role service_role;
 select ok(
   (select s.revoked_at is not null
      from public.revoke_invite((select i.id from public.invites i where i.token_hash = repeat('94', 32)),
@@ -546,12 +557,11 @@ select is(
   'revoked', 'a link revoked via revoke_invite returns revoked'
 );
 
-select id from public.create_link_invite('00000000-0000-0000-0000-00000000f901',
-  '00000000-0000-0000-0000-00000000e903', repeat('95', 32), null, null);
+-- An expired link plain member M created before links became owner/admin only.
 reset role;
-update public.invites
-set created_at = now() - interval '2 hours', expires_at = now() - interval '1 hour'
-where token_hash = repeat('95', 32);
+insert into public.invites (room_id, created_by, kind, token_hash, created_at, expires_at) values
+  ('00000000-0000-0000-0000-00000000f901', '00000000-0000-0000-0000-00000000e903', 'link',
+   repeat('95', 32), now() - interval '2 hours', now() - interval '1 hour');
 set local role service_role;
 
 select is(
@@ -567,12 +577,13 @@ select ok(
 );
 
 -- ---------------------------------------------------------------------------
--- remove_member revokes the target's pending invites (77-89)
+-- remove_member revokes the target's pending invites (78-90)
 -- ---------------------------------------------------------------------------
 -- Room K (f903): O owner, A admin, M member, P member, X member.
 -- M's invites in K: pending link a1, pending direct to N (905), an accepted direct (957), a
 -- declined direct (958). P's pending link a2; A's pending direct to Q (906). X's pending link
--- a3 and pending direct to 956 (no profile).
+-- a3 and pending direct to 956 (no profile). The members' links a1-a3 are inserted directly
+-- (links created before links became owner/admin only).
 reset role;
 insert into public.rooms (id, name, icon_emoji) values
   ('00000000-0000-0000-0000-00000000f903', 'Room K', 'x');
@@ -587,21 +598,19 @@ insert into public.invites (id, room_id, created_by, kind, invitee_steam_id, max
    '00000000-0000-0000-0000-00000000e903', 'direct', '76561190000000957', 1, 1, now(), null),
   ('00000000-0000-0000-0000-0000000009a8', '00000000-0000-0000-0000-00000000f903',
    '00000000-0000-0000-0000-00000000e903', 'direct', '76561190000000958', 1, 0, null, now());
+insert into public.invites (room_id, created_by, kind, token_hash) values
+  ('00000000-0000-0000-0000-00000000f903', '00000000-0000-0000-0000-00000000e903', 'link', repeat('a1', 32)),
+  ('00000000-0000-0000-0000-00000000f903', '00000000-0000-0000-0000-00000000e904', 'link', repeat('a2', 32)),
+  ('00000000-0000-0000-0000-00000000f903', '00000000-0000-0000-0000-00000000e907', 'link', repeat('a3', 32));
 set local role service_role;
 
-select id from public.create_link_invite('00000000-0000-0000-0000-00000000f903',
-  '00000000-0000-0000-0000-00000000e903', repeat('a1', 32), null, null);
 select set_config('test.km',
   (select s.id::text
      from public.create_direct_invite('00000000-0000-0000-0000-00000000f903',
             '00000000-0000-0000-0000-00000000e903', '76561190000000905', null) s),
   true) is not null as _km;
-select id from public.create_link_invite('00000000-0000-0000-0000-00000000f903',
-  '00000000-0000-0000-0000-00000000e904', repeat('a2', 32), null, null);
 select id from public.create_direct_invite('00000000-0000-0000-0000-00000000f903',
   '00000000-0000-0000-0000-00000000e902', '76561190000000906', null);
-select id from public.create_link_invite('00000000-0000-0000-0000-00000000f903',
-  '00000000-0000-0000-0000-00000000e907', repeat('a3', 32), null, null);
 select id from public.create_direct_invite('00000000-0000-0000-0000-00000000f903',
   '00000000-0000-0000-0000-00000000e907', '76561190000000956', null);
 

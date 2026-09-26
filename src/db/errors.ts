@@ -21,9 +21,10 @@ export function dbFailure(operation: string, error: DbError): InternalError {
 
 /**
  * Maps an error raised by a room/channel/invite Postgres function to an AppError, using the
- * SQLSTATE table in supabase/migrations/20260925010655_core_schema_fixes.sql (HX006–HX008 come
- * from the channels migration, HX009–HX010 from the messages migration, HX011–HX012 from the invites migration). The DB message and details are never echoed to the client
- * (they can carry row values).
+ * SQLSTATE table in supabase/migrations/20260925010655_core_schema_fixes.sql (HX001–HX005,
+ * including HX005 → 409 OWNER_PROTECTED); HX006–HX008 come from the channels migration,
+ * HX009–HX010 from the messages migration, and HX011–HX012 from the invites migration. The DB
+ * message and details are never echoed to the client (they can carry row values).
  *
  * @param options.field request field blamed for 22023/23514/HX004 failures (default `body`).
  * @param options.uniqueViolation returned for 23505 when the caller knows which unique
@@ -42,7 +43,10 @@ export function rpcFailure(
     case 'HX003': // target_not_member
       return new NotFoundError();
     case 'HX005': // owner_cannot_leave_or_be_removed
-      return new ConflictError("The room owner can't leave or be removed; transfer ownership or delete the room.");
+      return new ConflictError(
+        "The room owner can't leave or be removed; transfer ownership or delete the room first.",
+        'OWNER_PROTECTED',
+      );
     case 'HX006': // channel_limit_reached
       return new ConflictError('This room has the maximum number of channels.', 'CHANNEL_LIMIT_REACHED');
     case 'HX007': // stale channel list (reorder)

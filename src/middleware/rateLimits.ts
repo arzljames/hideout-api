@@ -60,3 +60,5 @@ export const inviteRevokeLimiter = limiter(HOUR, 60, byUser);
 export const roomCreateLimiter = limiter(HOUR, 10, byUser);
 export const roomUpdateLimiter = limiter(HOUR, 30, byUser);
 export const channelWriteLimiter = limiter(HOUR, 60, byUser);
+/** Shared by leave, remove, change role, and transfer ownership. */
+export const memberWriteLimiter = limiter(HOUR, 30, byUser);

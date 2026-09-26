@@ -20,7 +20,7 @@ describe('rpcFailure', () => {
     ['HX002', ForbiddenError, 403, 'FORBIDDEN'],
     ['HX003', NotFoundError, 404, 'NOT_FOUND'],
     ['HX004', ValidationError, 422, 'VALIDATION_FAILED'],
-    ['HX005', ConflictError, 409, 'CONFLICT'],
+    ['HX005', ConflictError, 409, 'OWNER_PROTECTED'],
     ['HX006', ConflictError, 409, 'CHANNEL_LIMIT_REACHED'],
     ['HX007', ConflictError, 409, 'CHANNEL_ORDER_STALE'],
     ['HX008', ConflictError, 409, 'LAST_TEXT_CHANNEL'],
@@ -45,7 +45,7 @@ describe('rpcFailure', () => {
     expect(sameUser.details).toEqual([{ path: 'body.userId', message: 'The request is invalid.' }]);
 
     const owner = rpcFailure('remove_member', { code: 'HX005', message: SECRET });
-    expect(owner.message).toBe("The room owner can't leave or be removed; transfer ownership or delete the room.");
+    expect(owner.message).toBe("The room owner can't leave or be removed; transfer ownership or delete the room first.");
     expect(owner.details).toBeUndefined();
   });
 
