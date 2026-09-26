@@ -20,13 +20,20 @@ export function dbFailure(operation: string, error: DbError): InternalError {
 }
 
 /**
- * Maps an error raised by a room/invite Postgres function to an AppError, using the SQLSTATE
- * table in supabase/migrations/20260925010655_core_schema_fixes.sql. The DB message and
- * details are never echoed to the client (they can carry row values).
+ * Maps an error raised by a room/channel/invite Postgres function to an AppError, using the
+ * SQLSTATE table in supabase/migrations/20260925010655_core_schema_fixes.sql (HX006–HX008 come
+ * from the channels migration). The DB message and details are never echoed to the client
+ * (they can carry row values).
  *
- * @param field request field blamed for 22023/23514/HX004 failures (e.g. `body`).
+ * @param options.field request field blamed for 22023/23514/HX004 failures (default `body`).
+ * @param options.uniqueViolation returned for 23505 when the caller knows which unique
+ *   constraint a function can hit (e.g. a channel name); otherwise 23505 is a 500.
  */
-export function rpcFailure(operation: string, error: DbError, field = 'body'): AppError {
+export function rpcFailure(
+  operation: string,
+  error: DbError,
+  { field = 'body', uniqueViolation }: { field?: string; uniqueViolation?: AppError } = {},
+): AppError {
   switch (error.code) {
     case 'HX001':
       return new NotFoundError();
@@ -36,6 +43,14 @@ export function rpcFailure(operation: string, error: DbError, field = 'body'): A
       return new NotFoundError();
     case 'HX005': // owner_cannot_leave_or_be_removed
       return new ConflictError("The room owner can't leave or be removed; transfer ownership or delete the room.");
+    case 'HX006': // channel_limit_reached
+      return new ConflictError('This room has the maximum number of channels.', 'CHANNEL_LIMIT_REACHED');
+    case 'HX007': // stale channel list (reorder)
+      return new ConflictError('The channel list changed. Reload and try again.', 'CHANNEL_ORDER_STALE');
+    case 'HX008': // last_text_channel
+      return new ConflictError("A room needs at least one text channel, so this one can't be deleted.", 'LAST_TEXT_CHANNEL');
+    case '23505':
+      return uniqueViolation ?? dbFailure(operation, error);
     case 'HX004': // same_user
     case '22023':
     case '23514':

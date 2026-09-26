@@ -8,6 +8,7 @@ import {
   RoomIcon as RoomIconSchema,
 } from '../events.js';
 import { CursorQuery, Id, authedErrors, errorResponse, page } from './common.js';
+import { DISPLAY_NAME_RULES, displayName } from './names.js';
 import { registry } from './registry.js';
 
 /*
@@ -37,31 +38,12 @@ const Timestamp = z.iso.datetime({ offset: true });
 // Built at runtime: the `v` flag needs an ES2024 regex literal and tsconfig targets ES2023.
 const SINGLE_EMOJI = new RegExp('^\\p{RGI_Emoji}$', 'v');
 
-// Invisible and direction-changing characters that let a name spoof another (or hide text):
-// C0/C1 controls, zero-width space/non-joiner, LRM/RLM, bidi embeddings/overrides/isolates,
-// word joiner and invisible operators, and the BOM. ZWJ (U+200D) stays: emoji sequences use it.
-const SPOOFING_CHARS = /[\p{Cc}\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/u;
-const VISIBLE_CHAR = /[\p{L}\p{N}\p{S}\p{P}]/u;
-
-// Refines, not .regex(): the Unicode property escapes need the `u` flag, which the OpenAPI
-// `pattern` can't express portably.
 export const RoomName = registry.register(
   'RoomName',
-  z
-    .string()
-    .trim()
-    .min(1, 'Name is required.')
-    .max(48, 'Name must be at most 48 characters.')
-    .refine((value) => !SPOOFING_CHARS.test(value), "Name can't contain invisible or text-direction control characters.")
-    .refine((value) => VISIBLE_CHAR.test(value), 'Name must contain a letter, number, symbol, or punctuation mark.')
-    .openapi({
-      description:
-        'Room name: 1–48 UTF-16 code units after trimming surrounding whitespace. Must contain at least one ' +
-        'letter, number, symbol, or punctuation mark, and no invisible or bidi control characters ' +
-        '(control characters, U+200B, U+200C, U+200E, U+200F, U+202A–U+202E, U+2060–U+2064, U+2066–U+2069, ' +
-        'U+FEFF; U+200D zero-width joiner is allowed for emoji).',
-      example: 'Friday Night Raids',
-    }),
+  displayName(48).openapi({
+    description: `Room name: 1–48 UTF-16 code units after trimming surrounding whitespace. ${DISPLAY_NAME_RULES}`,
+    example: 'Friday Night Raids',
+  }),
 );
 
 const EmojiIconInput = z.strictObject({

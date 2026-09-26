@@ -21,6 +21,9 @@ describe('rpcFailure', () => {
     ['HX003', NotFoundError, 404, 'NOT_FOUND'],
     ['HX004', ValidationError, 422, 'VALIDATION_FAILED'],
     ['HX005', ConflictError, 409, 'CONFLICT'],
+    ['HX006', ConflictError, 409, 'CHANNEL_LIMIT_REACHED'],
+    ['HX007', ConflictError, 409, 'CHANNEL_ORDER_STALE'],
+    ['HX008', ConflictError, 409, 'LAST_TEXT_CHANNEL'],
     ['22023', ValidationError, 422, 'VALIDATION_FAILED'],
     ['23514', ValidationError, 422, 'VALIDATION_FAILED'],
   ] as const)('maps %s to %s (%i %s) without echoing the DB message', (code, type, status, errorCode) => {
@@ -33,13 +36,48 @@ describe('rpcFailure', () => {
   });
 
   it('uses generic messages for HX004 (blaming the given field) and HX005', () => {
-    const sameUser = rpcFailure('transfer_ownership', { code: 'HX004', message: SECRET }, 'body.userId');
+    const sameUser = rpcFailure('transfer_ownership', { code: 'HX004', message: SECRET }, { field: 'body.userId' });
     expect(sameUser.message).toBe('The request is invalid.');
     expect(sameUser.details).toEqual([{ path: 'body.userId', message: 'The request is invalid.' }]);
 
     const owner = rpcFailure('remove_member', { code: 'HX005', message: SECRET });
     expect(owner.message).toBe("The room owner can't leave or be removed; transfer ownership or delete the room.");
     expect(owner.details).toBeUndefined();
+  });
+
+  it.each(['22023', '23514', 'HX004'])('blames `body` for %s by default, or the given field', (code) => {
+    expect(rpcFailure('some_fn', { code, message: SECRET }).details).toEqual([
+      { path: 'body', message: 'The request is invalid.' },
+    ]);
+    const taken = new ConflictError('taken', 'CHANNEL_NAME_TAKEN');
+    expect(rpcFailure('some_fn', { code, message: SECRET }, { field: 'body.name', uniqueViolation: taken }).details).toEqual([
+      { path: 'body.name', message: 'The request is invalid.' },
+    ]);
+  });
+
+  it('uses generic messages for the channel codes HX006, HX007, and HX008', () => {
+    expect(rpcFailure('create_channel', { code: 'HX006', message: SECRET }).message).toBe(
+      'This room has the maximum number of channels.',
+    );
+    expect(rpcFailure('reorder_channels', { code: 'HX007', message: SECRET }).message).toBe(
+      'The channel list changed. Reload and try again.',
+    );
+    expect(rpcFailure('delete_channel', { code: 'HX008', message: SECRET }).message).toBe(
+      "A room needs at least one text channel, so this one can't be deleted.",
+    );
+  });
+
+  it('returns the caller-supplied error for 23505 when the function knows which unique constraint it hits', () => {
+    const taken = new ConflictError('A channel with this name already exists in this room.', 'CHANNEL_NAME_TAKEN');
+    const err = rpcFailure('create_channel', { code: '23505', message: SECRET }, { uniqueViolation: taken });
+    expect(err).toBe(taken);
+    expect(err.status).toBe(409);
+    expect(clientFacing(err)).not.toContain('SECRET');
+  });
+
+  it.each(['HX001', 'HX002', 'HX006', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
+    const taken = new ConflictError('taken', 'CHANNEL_NAME_TAKEN');
+    expect(rpcFailure('create_channel', { code, message: SECRET }, { uniqueViolation: taken })).not.toBe(taken);
   });
 
   it.each(['XX000', '23505', '23503', undefined])('maps %s to a generic 500 that keeps the cause for logs only', (code) => {

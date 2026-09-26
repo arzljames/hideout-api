@@ -43,10 +43,12 @@ export const Message = z.object({
   editedAt: Timestamp.nullable(),
 });
 
+export const ChannelType = z.enum(['text', 'voice']);
+
 export const Channel = z.object({
   id: Id,
   roomId: Id,
-  type: z.enum(['text', 'voice']),
+  type: ChannelType,
   name: z.string(),
   position: z.number().int(),
 });
@@ -84,6 +86,8 @@ export const serverEvents = {
     'channel:created': z.object({ channel: Channel }),
     'channel:updated': z.object({ channel: Channel }),
     'channel:deleted': z.object({ id: Id, roomId: Id }),
+    // Every live channel of `type` in the room, in their new order (first = top).
+    'channel:reordered': z.object({ roomId: Id, type: ChannelType, channelIds: z.array(Id) }),
     'member:joined': z.object({ member: Member }),
     'member:left': z.object({ roomId: Id, userId: Id }),
     'member:role_changed': z.object({ roomId: Id, userId: Id, role: Role }),

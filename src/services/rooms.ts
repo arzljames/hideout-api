@@ -40,7 +40,8 @@ interface RoomRow {
   created_at: string;
 }
 
-interface ChannelRow {
+/** The channel columns toChannel reads. */
+export interface ChannelRow {
   id: string;
   room_id: string;
   type: 'text' | 'voice';
@@ -74,7 +75,7 @@ async function toRooms(rows: RoomRow[]): Promise<RoomShape[]> {
   });
 }
 
-function toChannel(row: ChannelRow): ChannelShape {
+export function toChannel(row: ChannelRow): ChannelShape {
   return { id: row.id, roomId: row.room_id, type: row.type, name: row.name, position: row.position };
 }
 
@@ -327,12 +328,15 @@ async function notifyRemovedMembers(roomId: string): Promise<void> {
   await Promise.allSettled(data.map((row) => broadcastToUser(row.user_id, 'member:removed', { roomId })));
 }
 
-/** Removes everyone from a channel's LiveKit room. A room that doesn't exist (nobody joined) is the common case. */
-async function endVoiceRoom(channelId: string): Promise<void> {
+/**
+ * Removes everyone from a (deleted) voice channel's LiveKit room. A room that doesn't exist
+ * (nobody joined) is the common case. Never throws: the delete has already committed.
+ */
+export async function endVoiceRoom(channelId: string): Promise<void> {
   try {
     await livekitRooms.deleteRoom(voiceRoomName(channelId));
   } catch (err) {
-    if (isLivekitNotFound(err)) logger.debug({ channelId }, 'no LiveKit room to end for deleted room');
-    else logger.warn({ err, channelId }, 'could not end LiveKit room for deleted room');
+    if (isLivekitNotFound(err)) logger.debug({ channelId }, 'no LiveKit room to end for deleted voice channel');
+    else logger.warn({ err, channelId }, 'could not end LiveKit room for deleted voice channel');
   }
 }

@@ -695,6 +695,53 @@ describe('rooms: validation', () => {
     expect(rpcCalls('create_room')[0]?.p_name).toBe(value);
   });
 
+  describe('display-name characters', () => {
+    const rejected: [string, string][] = [
+      ['an Arabic letter mark (U+061C)', 'a\u061Cb'],
+      ['a soft hyphen inside', 'Ra\u00ADid'],
+      ['a Mongolian vowel separator (U+180E)', 'a\u180Eb'],
+      ['an interlinear annotation anchor (U+FFF9)', 'a\uFFF9b'],
+      ['a stray tag character', 'a\u{E0041}b'],
+      ['an emoji followed by a stray tag character', '🎮\u{E0041}'],
+      ['a line separator inside', 'a\u2028b'],
+      ['a paragraph separator inside', 'a\u2029b'],
+      ['a Hangul filler (U+3164) alone', '\u3164'],
+      ['a braille blank (U+2800) alone', '\u2800'],
+      ['a Hangul choseong filler (U+115F) alone', '\u115F'],
+      ['a Hangul jungseong filler (U+1160) alone', '\u1160'],
+      ['a halfwidth Hangul filler (U+FFA0) alone', '\uFFA0'],
+      ['49 characters after NFC', 'e\u0301'.repeat(49)],
+    ];
+
+    it.each(rejected)('POST and PATCH return 422 for a name with %s without calling an rpc', async (_name, value) => {
+      buildWorld('owner');
+      const post = await call('post', '/api/rooms', { body: { name: value, icon: emoji } });
+      expectError(post, 422, 'VALIDATION_FAILED');
+      expect(detailPaths(post)).toEqual(['body.name']);
+      const patch = await call('patch', `/api/rooms/${ROOM_ID}`, { body: { name: value } });
+      expectError(patch, 422, 'VALIDATION_FAILED');
+      expect(detailPaths(patch)).toEqual(['body.name']);
+      expect(fakeDb.rpc).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['text plus an emoji', 'Squad 🎮', 'Squad 🎮'],
+      ['a composed accented letter', 'Caf\u00E9', 'Caf\u00E9'],
+      ['a decomposed accented letter, sent as NFC', 'Cafe\u0301', 'Caf\u00E9'],
+      ['a lone decomposed é, sent as the composed form', 'e\u0301', '\u00E9'],
+      ['a ZWJ family emoji', '👨‍👩‍👧', '👨‍👩‍👧'],
+      ['a tag-sequence flag emoji', '🏴\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}', '🏴\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}'],
+      ['48 characters after NFC (96 code units decomposed)', 'e\u0301'.repeat(48), '\u00E9'.repeat(48)],
+    ])('POST and PATCH accept a name with %s and send the NFC form to the rpc', async (_name, value, stored) => {
+      buildWorld('owner');
+      results.rpcByName.create_room = { data: ROOM_ID, error: null };
+      expect((await call('post', '/api/rooms', { body: { name: value, icon: emoji } })).status).toBe(201);
+      expect((await call('patch', `/api/rooms/${ROOM_ID}`, { body: { name: value } })).status).toBe(200);
+      expect(rpcCalls('create_room')[0]?.p_name).toBe(stored);
+      expect(rpcCalls('update_room')[0]?.p_name).toBe(stored);
+    });
+  });
+
   it('trims the name and accepts exactly 48 characters after trimming', async () => {
     buildWorld('owner');
     results.rpcByName.create_room = { data: ROOM_ID, error: null };

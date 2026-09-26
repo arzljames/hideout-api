@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { authRouter } from './auth.js';
+import { channelsRouter, roomChannelsRouter } from './channels.js';
 import { createContractRouter } from './contract.js';
 import { docsRouter } from './docs.js';
 import { mount } from './documentedRouter.js';
@@ -20,3 +21,5 @@ mount(apiRouter, authRouter);
 // Everything mounted below this line requires a session.
 apiRouter.use(requireAuth);
 mount(apiRouter, roomsRouter);
+mount(apiRouter, roomChannelsRouter);
+mount(apiRouter, channelsRouter);

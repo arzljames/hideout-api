@@ -122,7 +122,7 @@ All channels are **private** (`config: { private: true }`), so Supabase checks R
 
 **Events Node broadcasts** (defined in `src/contracts/events.ts`)
 - `channel:<id>`: `message:created`, `message:updated`, `message:deleted`
-- `room:<id>`: `channel:created`, `channel:updated`, `channel:deleted`, `member:joined`, `member:left`, `member:role_changed`, `voice:participants`, `room:updated`, `room:deleted`
+- `room:<id>`: `channel:created`, `channel:updated`, `channel:reordered`, `channel:deleted`, `member:joined`, `member:left`, `member:role_changed`, `voice:participants`, `room:updated`, `room:deleted`
 - `user:<id>`: `invite:received`, `member:removed`, `session:expired`
 
 **Events browsers may send** (enforced by RLS insert policies): Broadcast only on `typing:<id>` topics and Presence only on `room:<id>` topics, and only for rooms the user belongs to. Realtime checks send rights once per join, without seeing the event or payload, so RLS can't limit which events are sent: that's why typing has its own topic, and why receivers treat typing and Presence payloads as untrusted (ignore userIds not in the member list). Accepted limits: a member can spoof another member's typing or Presence (never use them for authorization), and can flood `typing:`/Presence, which counts against the project-wide Realtime quota; clients subscribe only to the `typing` event, and if abuse appears, typing moves behind a rate-limited Node endpoint.
@@ -160,7 +160,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - `invites` (id, room_id, created_by, kind: link | direct, token_hash, invitee_steam_id, max_uses, uses, expires_at, revoked_at, accepted_at, declined_at, created_at). **link**: shareable, token hash only, optional max uses and expiry. **direct**: to a SteamID (the person may not have signed in yet; it appears in their inbox when they do), one use, accept or decline; only one pending per room + SteamID, so revoke an expired pending one before re-inviting. Link expiry and max uses are optional in the DB; the API sets allowed values in Zod.
 - Room icons: private Storage bucket `room-icons`; Node uploads and serves signed URLs. Browsers get no storage policies.
 - Ephemeral, never stored: online status and typing (Realtime Presence/Broadcast), voice speaking/muted/deafened (LiveKit), voice device and push-to-talk settings (hideout-web localStorage).
-- Multi-step writes are Postgres functions (service role only): `create_login_session`, `create_room`, `update_room`, `redeem_invite_link`, `respond_to_direct_invite`, `transfer_ownership`, `delete_room`, `remove_member`, `change_role`. Their error SQLSTATEs map to HTTP in the migration header (`HX001` → 404 for non-members and missing rooms, `HX002` → 403 for members lacking the role). Realtime access is `private.can_access_topic(topic)`, the only Hideout function `authenticated` can execute.
+- Multi-step writes are Postgres functions (service role only): `create_login_session`, `create_room`, `update_room`, `redeem_invite_link`, `respond_to_direct_invite`, `transfer_ownership`, `delete_room`, `remove_member`, `change_role`, `create_channel`, `rename_channel`, `reorder_channels`, `delete_channel`. Their error SQLSTATEs map to HTTP in the migration header (`HX001` → 404 for non-members and missing rooms, `HX002` → 403 for members lacking the role; for channels, `HX006` → 409 `CHANNEL_LIMIT_REACHED`, `HX007` → 409 `CHANNEL_ORDER_STALE` for a stale reorder list, `HX008` → 409 `LAST_TEXT_CHANNEL`, and `23505` → 409 `CHANNEL_NAME_TAKEN`). Realtime access is `private.can_access_topic(topic)`, the only Hideout function `authenticated` can execute.
 - Invite preview "N online": not decided yet. Presence lives only in Realtime and Node holds no connections, so the preview shows the member count only until a design is chosen.
 
 ## Non-negotiable rules
@@ -188,7 +188,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - CSRF: state-changing routes require `Content-Type: application/json` and an `Origin` equal to `WEB_ORIGIN`.
 - Invite tokens: 32 random bytes, base64url; store SHA-256 only; redeem in a Postgres function that locks the invite row.
 - LiveKit tokens: identity = profile id, room = `voice_<channelId>`, TTL 10 min. Webhooks verified with `WebhookReceiver` on the raw body.
-- Rate limits: auth 10/min/IP (separately for `/api/auth/steam` and the callback; both redirect with `?auth_error=RATE_LIMITED` instead of a JSON 429, since they are browser navigations), realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user, room create 10/hour/user, room update 30/hour/user.
+- Rate limits: auth 10/min/IP (separately for `/api/auth/steam` and the callback; both redirect with `?auth_error=RATE_LIMITED` instead of a JSON 429, since they are browser navigations), realtime-token 30/hour/user, messages 10/10s/user, invite create 20/hour/user, invite redeem 10/min/user, room create 10/hour/user, room update 30/hour/user, channel writes 60/hour/user.
 - Pino redaction covers cookies, authorization headers, tokens, and keys.
 
 ## Operational
