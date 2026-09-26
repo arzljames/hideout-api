@@ -22,7 +22,7 @@ export function dbFailure(operation: string, error: DbError): InternalError {
 /**
  * Maps an error raised by a room/channel/invite Postgres function to an AppError, using the
  * SQLSTATE table in supabase/migrations/20260925010655_core_schema_fixes.sql (HX006–HX008 come
- * from the channels migration). The DB message and details are never echoed to the client
+ * from the channels migration, HX009–HX010 from the messages migration). The DB message and details are never echoed to the client
  * (they can carry row values).
  *
  * @param options.field request field blamed for 22023/23514/HX004 failures (default `body`).
@@ -49,6 +49,13 @@ export function rpcFailure(
       return new ConflictError('The channel list changed. Reload and try again.', 'CHANNEL_ORDER_STALE');
     case 'HX008': // last_text_channel
       return new ConflictError("A room needs at least one text channel, so this one can't be deleted.", 'LAST_TEXT_CHANNEL');
+    case 'HX009': // channel_not_text
+      return new ConflictError('Messages can only be sent in text channels.', 'CHANNEL_NOT_TEXT');
+    case 'HX010': // idempotency key reused for a different message
+      return new ConflictError(
+        'This Idempotency-Key was already used for a different message. Use a new key for each message.',
+        'IDEMPOTENCY_KEY_REUSED',
+      );
     case '23505':
       return uniqueViolation ?? dbFailure(operation, error);
     case 'HX004': // same_user

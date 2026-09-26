@@ -5,6 +5,7 @@ import { channelsRouter, roomChannelsRouter } from './channels.js';
 import { createContractRouter } from './contract.js';
 import { docsRouter } from './docs.js';
 import { mount } from './documentedRouter.js';
+import { channelMessagesRouter, messagesRouter } from './messages.js';
 import { roomsRouter } from './rooms.js';
 import { systemRouter } from './system.js';
 
@@ -23,3 +24,5 @@ apiRouter.use(requireAuth);
 mount(apiRouter, roomsRouter);
 mount(apiRouter, roomChannelsRouter);
 mount(apiRouter, channelsRouter);
+mount(apiRouter, channelMessagesRouter);
+mount(apiRouter, messagesRouter);

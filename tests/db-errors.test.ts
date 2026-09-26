@@ -24,6 +24,8 @@ describe('rpcFailure', () => {
     ['HX006', ConflictError, 409, 'CHANNEL_LIMIT_REACHED'],
     ['HX007', ConflictError, 409, 'CHANNEL_ORDER_STALE'],
     ['HX008', ConflictError, 409, 'LAST_TEXT_CHANNEL'],
+    ['HX009', ConflictError, 409, 'CHANNEL_NOT_TEXT'],
+    ['HX010', ConflictError, 409, 'IDEMPOTENCY_KEY_REUSED'],
     ['22023', ValidationError, 422, 'VALIDATION_FAILED'],
     ['23514', ValidationError, 422, 'VALIDATION_FAILED'],
   ] as const)('maps %s to %s (%i %s) without echoing the DB message', (code, type, status, errorCode) => {
@@ -67,6 +69,17 @@ describe('rpcFailure', () => {
     );
   });
 
+  it('uses generic messages without details for the message codes HX009 and HX010', () => {
+    const notText = rpcFailure('send_message', { code: 'HX009', message: SECRET }, { field: 'body.body' });
+    expect(notText.message).toBe('Messages can only be sent in text channels.');
+    expect(notText.details).toBeUndefined();
+    const reused = rpcFailure('send_message', { code: 'HX010', message: SECRET }, { field: 'body.body' });
+    expect(reused.message).toBe(
+      'This Idempotency-Key was already used for a different message. Use a new key for each message.',
+    );
+    expect(reused.details).toBeUndefined();
+  });
+
   it('returns the caller-supplied error for 23505 when the function knows which unique constraint it hits', () => {
     const taken = new ConflictError('A channel with this name already exists in this room.', 'CHANNEL_NAME_TAKEN');
     const err = rpcFailure('create_channel', { code: '23505', message: SECRET }, { uniqueViolation: taken });
@@ -75,7 +88,7 @@ describe('rpcFailure', () => {
     expect(clientFacing(err)).not.toContain('SECRET');
   });
 
-  it.each(['HX001', 'HX002', 'HX006', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
+  it.each(['HX001', 'HX002', 'HX006', 'HX009', 'HX010', '22023', 'XX000'])('ignores the uniqueViolation override for %s', (code) => {
     const taken = new ConflictError('taken', 'CHANNEL_NAME_TAKEN');
     expect(rpcFailure('create_channel', { code, message: SECRET }, { uniqueViolation: taken })).not.toBe(taken);
   });

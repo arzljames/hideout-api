@@ -34,7 +34,7 @@
               "code": {
                 "type": "string",
                 "example": "VALIDATION_FAILED",
-                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
+                "description": "One of: BAD_REQUEST, INVALID_JSON, UNAUTHENTICATED, FORBIDDEN, ORIGIN_NOT_ALLOWED, UNSUPPORTED_CONTENT_TYPE, NOT_FOUND, CONFLICT, CHANNEL_NAME_TAKEN, CHANNEL_LIMIT_REACHED, LAST_TEXT_CHANNEL, CHANNEL_ORDER_STALE, CHANNEL_NOT_TEXT, IDEMPOTENCY_KEY_REUSED, PAYLOAD_TOO_LARGE, VALIDATION_FAILED, RATE_LIMITED, INTERNAL."
               },
               "message": {
                 "type": "string",
@@ -551,6 +551,104 @@
         "required": [
           "data"
         ]
+      },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProfileSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "editedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "channelId",
+          "author",
+          "body",
+          "createdAt",
+          "editedAt"
+        ],
+        "description": "`author` is null only when the author’s profile was deleted; former members keep their author. `editedAt` is null until the first edit."
+      },
+      "MessagePage": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Message"
+            }
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "data",
+          "nextCursor"
+        ]
+      },
+      "MessageBody": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2000,
+        "description": "Message text: 1–2000 Unicode code points (counted after CRLF → LF), not trimmed. Must be well-formed UTF-16 (no lone surrogates) and contain at least one visible character: not whitespace, a format character (Unicode Cf, e.g. zero-width or bidi controls), a combining mark on its own (Mn, Me), U+2800, or the Hangul fillers U+115F, U+1160, U+3164, U+FFA0. Format characters, including bidi controls, are allowed alongside visible text, so render bodies bidi-isolated (e.g. `<bdi>` or `dir=\"auto\"` with `unicode-bidi: isolate`). Control characters (Unicode Cc) are rejected except tab and line feed; CRLF is stored as LF and a lone CR is rejected.",
+        "example": "gg, one more?"
+      },
+      "SendMessageBody": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/MessageBody"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
+      },
+      "EditMessageBody": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/MessageBody"
+          }
+        },
+        "required": [
+          "body"
+        ],
+        "additionalProperties": false
       }
     },
     "parameters": {}
@@ -1722,6 +1820,459 @@
           },
           "422": {
             "description": "Invalid type, or channelIds empty, too long, malformed, or repeated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/channels/{channelId}/messages": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Send a message",
+        "description": "Any member of the channel’s room can send in a text channel. Broadcasts `message:created` on `channel:<channelId>`, also for idempotent replays, so `message:created` may be delivered more than once: dedupe by id. Non-members get 404. Send an `Idempotency-Key` so retries are safe. Sending, editing, and deleting share one rate limit: 10 per 10 seconds per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel id."
+            },
+            "required": true,
+            "description": "Channel id.",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,128}$",
+              "description": "Recommended: a fresh random key (e.g. a UUID) per message, reused on every retry of that message. A retry with the same key returns the original message (200, `Idempotent-Replayed: true`) instead of posting it twice. Reusing a key for a different message (another body or channel), or after that message was deleted or edited to a different body, is 409 `IDEMPOTENCY_KEY_REUSED`.",
+              "example": "5f0c2a8e-1b7d-4c55-9a53-0e6d1b2c3d4e"
+            },
+            "required": false,
+            "description": "Recommended: a fresh random key (e.g. a UUID) per message, reused on every retry of that message. A retry with the same key returns the original message (200, `Idempotent-Replayed: true`) instead of posting it twice. Reusing a key for a different message (another body or channel), or after that message was deleted or edited to a different body, is 409 `IDEMPOTENCY_KEY_REUSED`.",
+            "name": "Idempotency-Key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A retry with an Idempotency-Key already used for this message: the original message, not posted again.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "Always `true` on this response.",
+                "schema": {
+                  "type": "string",
+                  "enum": [
+                    "true"
+                  ]
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found or deleted, its room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_NOT_TEXT`: the channel is a voice channel. `IDEMPOTENCY_KEY_REUSED`: the key was used for a different message (another body or channel), or that message was deleted or edited to a different body since.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body or Idempotency-Key.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "List messages in a text channel",
+        "description": "Any member of the channel’s room. Without `after`: history, newest first; pass `nextCursor` back as `cursor` for older messages until it is null. With `after=<messageId>` (after reconnecting): messages oldest first, starting 5 seconds before that message, so some may repeat: dedupe by id. Pass `nextCursor` back as `cursor` (alone) for newer messages until it is null. Delivery and backfill are best-effort. Backfill returns only live messages created after the window start; edits and deletes of older messages that happened while you were disconnected are not recovered (reload history for that). Deleted messages are never returned. Non-members get 404. Sent with `Cache-Control: no-store`. Rate limited to 120/minute per user.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Channel id."
+            },
+            "required": true,
+            "description": "Channel id.",
+            "name": "channelId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Opaque `nextCursor` from the previous page; continues in the same direction. Not with `after`."
+            },
+            "required": false,
+            "description": "Opaque `nextCursor` from the previous page; continues in the same direction. Not with `after`.",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "description": "Page size, 1–100 (default 50)."
+            },
+            "required": false,
+            "description": "Page size, 1–100 (default 50).",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Backfill after reconnecting: the id of the last message you have. Returns messages oldest first, starting 5 seconds before that message (so some may repeat: dedupe by id), excluding it. Not with `cursor`."
+            },
+            "required": false,
+            "description": "Backfill after reconnecting: the id of the last message you have. Returns messages oldest first, starting 5 seconds before that message (so some may repeat: dedupe by id), excluding it. Not with `cursor`.",
+            "name": "after",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of messages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessagePage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Channel not found or deleted, its room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`CHANNEL_NOT_TEXT`: the channel is a voice channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid cursor or limit, both `cursor` and `after`, or `after` is not a message in this channel.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/messages/{messageId}": {
+      "patch": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Edit a message",
+        "description": "Author only (no time limit). Sets `editedAt`. Broadcasts `message:updated` on `channel:<channelId>`. Non-members get 404. Sending, editing, and deleting share one rate limit: 10 per 10 seconds per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Message id."
+            },
+            "required": true,
+            "description": "Message id.",
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EditMessageBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The edited message.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Message"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is not the author.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found or deleted, its channel or room is deleted, or you are not a member of its room (non-members always get 404).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "messages"
+        ],
+        "summary": "Delete a message",
+        "description": "The author, or an owner or admin of the room. Soft-deletes the message; it is no longer returned. Broadcasts `message:deleted` on `channel:<channelId>`. Non-members get 404. Not idempotent: a retried DELETE of a message that was already deleted returns 404; treat that as done. Sending, editing, and deleting share one rate limit: 10 per 10 seconds per user. Writes need `Content-Type: application/json` (even with no body) and credentials; the CSRF check requires it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Message id."
+            },
+            "required": true,
+            "description": "Message id.",
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted."
+          },
+          "401": {
+            "description": "Not signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or Content-Type check failed (send `Content-Type: application/json` from WEB_ORIGIN). Or the caller is a plain member who isn’t the author.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Message not found or deleted, its channel or room is deleted, or you are not a member of its room (non-members always get 404).",
             "content": {
               "application/json": {
                 "schema": {

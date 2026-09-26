@@ -46,7 +46,9 @@ const HOUR = 60 * MINUTE;
 export const authLimiter = limiter(MINUTE, 10);
 export const readyLimiter = limiter(MINUTE, 30);
 export const realtimeTokenLimiter = limiter(HOUR, 30, byUser);
+/** Shared by send, edit, and delete: one budget for all message writes. */
 export const messageLimiter = limiter(10_000, 10, byUser);
+export const messageReadLimiter = limiter(MINUTE, 120, byUser);
 export const inviteCreateLimiter = limiter(HOUR, 20, byUser);
 export const inviteRedeemLimiter = limiter(MINUTE, 10, byUser);
 export const roomCreateLimiter = limiter(HOUR, 10, byUser);
