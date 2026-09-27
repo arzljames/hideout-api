@@ -48,3 +48,9 @@ export function createApp(): express.Express {
 
   return app;
 }
+
+/*
+ * Vercel's Express preset picks src/app.ts as the function entry (it is checked before
+ * src/index.ts) and serves its default export. Locally, src/index.ts listens instead.
+ */
+export default createApp();
