@@ -1,6 +1,8 @@
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { documentedRouter } from './documentedRouter.js';
+import { NotFoundError } from '../errors.js';
+import { logger } from '../lib/logger.js';
+import { documentedRouter, type DocumentedRouter } from './documentedRouter.js';
 
 /*
  * Swagger UI for contract/openapi.json, served same-origin from swagger-ui-dist so it
@@ -9,7 +11,10 @@ import { documentedRouter } from './documentedRouter.js';
  * rejected by requireSameOrigin (Origin must be WEB_ORIGIN); through the Vite proxy they pass.
  */
 
-const swaggerDir = dirname(createRequire(import.meta.url).resolve('swagger-ui-dist/package.json'));
+/** Where swagger-ui-dist is installed. Throws when the package isn't there. */
+function defaultSwaggerDir(): string {
+  return dirname(createRequire(import.meta.url).resolve('swagger-ui-dist/package.json'));
+}
 const ASSETS = ['swagger-ui.css', 'swagger-ui-bundle.js', 'favicon-32x32.png'] as const;
 
 const page = `<!doctype html>
@@ -40,19 +45,45 @@ const init = `window.ui = SwaggerUIBundle({
 });
 `;
 
-export const docsRouter = documentedRouter('/api/docs')
-  .get('/', (_req, res) => {
-    res.set('Cache-Control', 'no-cache').type('html').send(page);
-  })
-  .undocumented('Swagger UI boot script and static assets, not API endpoints', (router) => {
-    router.get('/init.js', (_req, res) => {
-      res.set('Cache-Control', 'no-cache').type('js').send(init);
-    });
-    for (const file of ASSETS) {
-      router.get(`/assets/${file}`, (_req, res, next) => {
-        res.sendFile(file, { root: swaggerDir, maxAge: '1d' }, (err) => {
-          if (err) next(err);
-        });
-      });
+/*
+ * The asset directory is resolved on first request, not at import: serverless bundlers (Vercel)
+ * can leave out a package that is only located at runtime, and missing docs assets must never
+ * stop the API from booting. They get 404 instead, and one warning is logged. The outcome is
+ * cached either way: a function's bundle can't change while it runs.
+ */
+export function createDocsRouter(resolveSwaggerDir: () => string = defaultSwaggerDir): DocumentedRouter {
+  let swaggerDir: string | null | undefined;
+  const assetsDir = (): string | null => {
+    if (swaggerDir !== undefined) return swaggerDir;
+    try {
+      swaggerDir = resolveSwaggerDir();
+    } catch (err) {
+      logger.warn({ err }, 'swagger-ui-dist not found; /api/docs assets unavailable');
+      swaggerDir = null;
     }
-  });
+    return swaggerDir;
+  };
+  const unavailable = () => new NotFoundError('API docs assets are not available on this deployment.');
+
+  return documentedRouter('/api/docs')
+    .get('/', (_req, res) => {
+      res.set('Cache-Control', 'no-cache').type('html').send(page);
+    })
+    .undocumented('Swagger UI boot script and static assets, not API endpoints', (router) => {
+      router.get('/init.js', (_req, res) => {
+        res.set('Cache-Control', 'no-cache').type('js').send(init);
+      });
+      for (const file of ASSETS) {
+        router.get(`/assets/${file}`, (_req, res, next) => {
+          const root = assetsDir();
+          if (root === null) {
+            next(unavailable());
+            return;
+          }
+          res.sendFile(file, { root, maxAge: '1d' }, (err) => {
+            if (err) next((err as { status?: number }).status === 404 ? unavailable() : err);
+          });
+        });
+      }
+    });
+}
