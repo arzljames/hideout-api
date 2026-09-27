@@ -1,6 +1,6 @@
 import cookieParser from 'cookie-parser';
 import express from 'express';
-import helmet from 'helmet';
+import helmetImport, { type HelmetOptions } from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { env } from './config/env.js';
 import { logger, serializeRequest } from './lib/logger.js';
@@ -9,6 +9,15 @@ import { requireSameOrigin } from './middleware/csrf.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { apiRouter } from './routes/index.js';
 import { livekitWebhookRouter } from './routes/livekitWebhook.js';
+
+/*
+ * helmet's package.json has no per-condition "types", so Vercel's TypeScript build types the
+ * default import as the CommonJS module object (TS2349, not callable) while NodeNext types it as
+ * the function. At runtime both are the function (index.mjs exports it as default; index.cjs sets
+ * module.exports.default = module.exports), so pin the type here. Drop the cast once helmet
+ * ships per-condition "types".
+ */
+const helmet = helmetImport as unknown as (options?: Readonly<HelmetOptions>) => express.RequestHandler;
 
 export function createApp(): express.Express {
   const app = express();
