@@ -1,7 +1,8 @@
 import express from 'express';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
@@ -10,6 +11,7 @@ import { errorHandler } from '../src/middleware/errorHandler.js';
 import { authLimiter } from '../src/middleware/rateLimits.js';
 import { validate } from '../src/middleware/validate.js';
 import { createContractRouter } from '../src/routes/contract.js';
+import { createDocsRouter } from '../src/routes/docs.js';
 
 describe('validate', () => {
   const app = express()
@@ -106,5 +108,44 @@ describe('contract route', () => {
     const res = await request(app).get('/contract/openapi.json');
     expect(res.status).toBe(404);
     expect(res.body.error).toEqual({ code: 'NOT_FOUND', message: 'Contract not generated.' });
+  });
+});
+
+describe('docs route', () => {
+  it('serves the page but 404s its assets (without crashing) when swagger-ui-dist is missing, looking it up once', async () => {
+    let lookups = 0;
+    const docs = createDocsRouter(() => {
+      lookups += 1;
+      throw new Error("Cannot find module 'swagger-ui-dist/package.json'");
+    });
+    const app = express().use('/docs', docs.router).use(errorHandler);
+
+    expect((await request(app).get('/docs')).status).toBe(200);
+    for (const file of ['swagger-ui.css', 'swagger-ui-bundle.js']) {
+      const res = await request(app).get(`/docs/assets/${file}`);
+      expect(res.status).toBe(404);
+      expect(res.body.error.code).toBe('NOT_FOUND');
+    }
+    expect(lookups).toBe(1);
+  });
+
+  it('404s (not 400) an asset missing from an otherwise-present package', async () => {
+    const empty = await mkdtemp(join(tmpdir(), 'hideout-swagger-'));
+    const app = express().use('/docs', createDocsRouter(() => empty).router).use(errorHandler);
+    const res = await request(app).get('/docs/assets/swagger-ui.css');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toEqual({ code: 'NOT_FOUND', message: 'API docs assets are not available on this deployment.' });
+  });
+
+  it('looks the package up once and reuses it', async () => {
+    let lookups = 0;
+    const docs = createDocsRouter(() => {
+      lookups += 1;
+      return dirname(createRequire(import.meta.url).resolve('swagger-ui-dist/package.json'));
+    });
+    const app = express().use('/docs', docs.router).use(errorHandler);
+    expect((await request(app).get('/docs/assets/swagger-ui.css')).status).toBe(200);
+    expect((await request(app).get('/docs/assets/swagger-ui-bundle.js')).status).toBe(200);
+    expect(lookups).toBe(1);
   });
 });

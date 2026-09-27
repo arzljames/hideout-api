@@ -4,7 +4,7 @@ import { authRouter } from './auth.js';
 import { roomBansRouter } from './bans.js';
 import { channelsRouter, roomChannelsRouter } from './channels.js';
 import { createContractRouter } from './contract.js';
-import { docsRouter } from './docs.js';
+import { createDocsRouter } from './docs.js';
 import { mount } from './documentedRouter.js';
 import { invitePreviewRouter, invitesRouter, myInvitesRouter, roomInvitesRouter } from './invites.js';
 import { roomMembersRouter } from './members.js';
@@ -20,7 +20,7 @@ export const apiRouter = Router();
 // mount() uses each router's documented path, so docs and real paths always agree.
 mount(apiRouter, systemRouter);
 mount(apiRouter, createContractRouter());
-mount(apiRouter, docsRouter);
+mount(apiRouter, createDocsRouter());
 // Steam sign-in routes are public; logout routes apply requireAuth themselves.
 mount(apiRouter, authRouter);
 // Link invite preview (GET /api/invites/:token/preview) is public; the rest of /api/invites isn't.
