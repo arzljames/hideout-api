@@ -23,6 +23,27 @@ function isTestSigningKey({ kid, privateKey }: JwtSigningKey): boolean {
 const isNonEmptyString = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 
 /*
+ * Dashboards (e.g. Vercel) store a pasted value verbatim, so a JWK copied from a quoted .env
+ * line arrives as '{...}'. Trim whitespace and drop one pair of matching outer quotes.
+ */
+function unwrapPastedJson(raw: string): string {
+  const value = raw.trim();
+  const quote = value[0];
+  if ((quote === "'" || quote === '"') && value.length > 1 && value.endsWith(quote)) return value.slice(1, -1).trim();
+  return value;
+}
+
+/** Why a value isn't JSON, from its shape only: never echoes key material. */
+function describeJsonShape(raw: string): string {
+  const value = unwrapPastedJson(raw);
+  if (value.length === 0) return 'the value is empty';
+  if (!value.startsWith('{')) return 'it should start with { (check for stray characters or quotes)';
+  if (!value.endsWith('}')) return 'it should end with } (it may be cut off, or have stray characters or quotes)';
+  if (/[\r\n]/.test(value)) return 'it contains a line break inside a value (paste it on one line)';
+  return 'it is not valid JSON (it may be cut off or edited)';
+}
+
+/*
  * A single-line ES256 (P-256) private JWK with a kid, imported into Supabase as a JWT
  * signing key (npm run jwt:keygen). Messages are fixed strings: JSON.parse and
  * createPrivateKey errors can echo parts of the input, so they are never surfaced.
@@ -34,9 +55,9 @@ const jwtPrivateJwk = z.string().transform((raw, ctx): JwtSigningKey => {
   };
   let jwk: unknown;
   try {
-    jwk = JSON.parse(raw);
+    jwk = JSON.parse(unwrapPastedJson(raw));
   } catch {
-    return fail('must be a single-line JSON object (the JWK from npm run jwt:keygen)');
+    return fail(`must be a single-line JSON object (the JWK from npm run jwt:keygen); ${describeJsonShape(raw)}`);
   }
   if (typeof jwk !== 'object' || jwk === null || Array.isArray(jwk)) {
     return fail('must be a JSON object (the JWK from npm run jwt:keygen)');
