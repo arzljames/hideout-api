@@ -148,7 +148,7 @@ Web and API must be **same-site**: e.g. `app.hideout.gg` (web) and `api.hideout.
 - Steam OpenID `return_to` = `API_URL/api/auth/steam/callback`; after login, redirect to `WEB_ORIGIN`.
 - Local dev: hideout-web's Vite proxy forwards `/api` to `localhost:3001`, so `API_URL` = `WEB_ORIGIN` = `http://localhost:5173`.
 - Node holds no long-lived connections, so it can run on any host, including serverless.
-- On Vercel (Express preset, `src/index.ts`), files read at runtime rather than imported (`contract/*.json`, the swagger-ui-dist assets) are bundled through `includeFiles` in `vercel.json`; add any new runtime-read file there. Nothing read from disk may be required at boot.
+- On Vercel, the Express preset uses `src/app.ts` as the function entry (its default export is the app; `src/index.ts`, with its SIGTERM drain, only runs outside Vercel). Files read at runtime rather than imported (`contract/*.json`, the swagger-ui-dist assets) are bundled through `includeFiles` in `vercel.json`; add any new runtime-read file there. Nothing read from disk may be required at boot.
 
 ## Domain model
 
