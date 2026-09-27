@@ -120,6 +120,42 @@ describe('parseEnv', () => {
       expect(message).not.toContain(value);
     });
 
+    // Dashboards store pasted values verbatim, so a value copied from a quoted .env line keeps its quotes.
+    it.each([
+      ['single quotes', `'${JSON.stringify(testJwk)}'`],
+      ['double quotes', `"${JSON.stringify(testJwk)}"`],
+      ['surrounding whitespace', `  ${JSON.stringify(testJwk)}\n`],
+      ['quotes and whitespace', ` '${JSON.stringify(testJwk)}' \r\n`],
+    ])('accepts a key pasted with %s', (_name, value) => {
+      expect(() => parseEnv({ ...valid, SUPABASE_JWT_PRIVATE_JWK: value })).not.toThrow();
+    });
+
+    it.each([
+      ['an empty value', '   ', /the value is empty/],
+      [
+        'a line break inside a value',
+        // A raw line break (not the escaped \n JSON.stringify would write), as a wrapped paste leaves it.
+        JSON.stringify({ ...testJwk, d: 'LINEBREAK' }).replace('LINEBREAK', `${testJwk.d?.slice(0, 10)}\n${testJwk.d?.slice(10)}`),
+        /contains a line break/,
+      ],
+      ['a stray leading character', `x${JSON.stringify(testJwk)}`, /should start with \{/],
+      ['a cut-off value', JSON.stringify(testJwk).slice(0, -2), /should end with \}/],
+      ['mismatched quotes', `'${JSON.stringify(testJwk)}"`, /should start with \{/],
+      ['single-quoted keys', `{'kty':'EC','d':'${testJwk.d}'}`, /is not valid JSON/],
+    ])('explains %s without echoing key material', (_name, value, hint) => {
+      let message = '';
+      try {
+        parseEnv({ ...valid, SUPABASE_JWT_PRIVATE_JWK: value });
+      } catch (err) {
+        message = (err as Error).message;
+      }
+      expect(message).toMatch(new RegExp(`SUPABASE_JWT_PRIVATE_JWK: ${NOT_OBJECT.source}; `));
+      expect(message).toMatch(hint);
+      const pieces = [testJwk.d, testJwk.x, testJwk.y, testJwk.d?.slice(0, 10), testJwk.d?.slice(10)];
+      for (const secret of pieces) if (secret) expect(message).not.toContain(secret);
+      if (value.trim()) expect(message).not.toContain(value);
+    });
+
     it('is required', () => {
       const { SUPABASE_JWT_PRIVATE_JWK: _omit, ...rest } = valid;
       expect(() => parseEnv(rest)).toThrow(/SUPABASE_JWT_PRIVATE_JWK/);
